@@ -1,0 +1,21 @@
+心屿智境后端 AI 会话日志
+文件：logs/ai-session.txt
+规则：每次开始新对话，先读本文件了解项目现状，再动手。一次对话结束前，把本次做了什么、没做什么、下一步追加到文末。只追加，不改历史。不要写入密钥、token、数据库密码。
+
+============================================================
+[2026-10-10] 初始化
+============================================================
+现状
+- 仓库：https://github.com/Jerry-Guo1020/Mind-Islet-Intelligent-Realm-api.git
+- 技术栈：Nest.js 11 + Prisma 6.19 + MySQL。客户端是微信小程序，不在本仓库。
+- 需求文档：../docs/心屿智境-产品需求与后端设计.md
+- 已完成：Nest 脚手架、Prisma schema、全局 PrismaModule、六个空模块（auth、users、island、records、ai-agent、mailbox）。
+- 数据表（仅 schema，未迁移）：User、CheckInRecord、IslandAsset、GraphNode。情绪枚举 ecstatic / calm / tired / anxious / sad。
+- 明确未做：不连 MySQL，不跑 prisma migrate。业务接口、JWT、微信登录、统一响应外壳都还没写。
+- .env 不入库。连接信息看 .env.example。
+
+待审核
+- 后端接口功能点清单已写在对话里，等用户确认后才开始实现。
+
+下一步
+- 等用户审核接口范围。确认前不要加路由、不要建库。

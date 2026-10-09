@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// 微信用户。id 即签发 JWT 使用的 UID。
+model User {
+  id        String   @id @default(cuid())
+  openid    String   @unique
+  nickname  String?
+  avatar    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  records CheckInRecord[]
+  assets  IslandAsset[]
+
+  @@map("users")
+}
+
+/// 一次成功打卡：情绪、日记正文、AI 鼓励语。
+model CheckInRecord {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  moodType  MoodType @map("mood_type")
+  content   String   @db.Text
+  aiReply   String?  @map("ai_reply") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset  IslandAsset?
+  nodes  GraphNode[]
+
+  @@index([userId, createdAt])
+  @@map("check_in_records")
+}
+
+/// 打卡产出的岛屿资产。图片必须是 Cloudflare R2 的 HTTPS 地址。
+model IslandAsset {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  recordId  String    @unique @map("record_id")
+  assetType AssetType @map("asset_type")
+  posX      Float     @map("pos_x")
+  posY      Float     @map("pos_y")
+  zIndex    Int       @default(0) @map("z_index")
+  imgUrl    String    @map("img_url")
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  record CheckInRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("island_assets")
+}
+
+/// 从打卡正文抽出的情绪关键词。与打卡记录多对多。
+model GraphNode {
+  id      String   @id @default(cuid())
+  keyword String   @unique
+  records CheckInRecord[]
+
+  @@map("graph_nodes")
+}
+
+/// 情绪选择器。接口传枚举值，前端展示中文。
+enum MoodType {
+  ecstatic
+  calm
+  tired
+  anxious
+  sad
+}
+
+enum AssetType {
+  flower
+  grass
+  tree
+  house
+  house_blue
+}
