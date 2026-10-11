@@ -19,3 +19,79 @@
 
 下一步
 - 等用户审核接口范围。确认前不要加路由、不要建库。
+
+============================================================
+[2026-08-14] 只读对照 who_family_wechat helper 打字机实现
+============================================================
+做了什么
+- 读了 https://github.com/zeroicey/who_family_wechat/tree/features/helper 的 api/helper.js、store/modules/helper.js、pages/helper/index.vue。
+- 结论：打字机效果不是 WebSocket，也不是 SSE。uni.request 调 SiliconFlow chat/completions，stream: false，整段返回后再用 setTimeout 每 20ms substring 逐字显示。
+
+没做什么
+- 未改本仓库代码，未加路由，未连 MySQL，未迁移。
+
+下一步
+- 仍等用户审核接口范围。确认前不要加路由、不要建库。
+
+============================================================
+[2026-10-10] 对照登录、AI 分支，并写后端范围
+============================================================
+做了什么
+- 只读对照 /Users/jerry/project/three 的微信登录。逻辑是 code 换 openid、HMAC 查重、随机昵称「用户+六位」、Dicebear 像素头像、可撤销的 opaque session，不是 JWT。
+- 只读对比 who_family_wechat 四个分支。main 的 api/helper.js 是最终 AI 契约，真 SSE；feat/ui-ux-redesign-pass 最新但 AI 文件相同；features/helper 是假打字机。该仓库没有 WebSocket，也不落库。
+- 用户确认：精灵对话按双跳说明全量入库。每天仍只能打卡一次。未打卡天气仍是平静、晴天。
+- 写了 docs/superpowers/specs/2026-10-10-api-scope-design.md 和 docs/superpowers/plans/2026-10-10-api-foundation.md。
+
+没做什么
+- 未实现业务路由，未连 MySQL，未跑 migration，未改小程序。
+- 设计文档尚未提交。
+
+下一步
+- 等用户审核设计文档。通过前不写业务代码，不建库。
+
+============================================================
+[2026-08-14] 核对当前已实现接口
+============================================================
+做了什么
+- 核对 src 路由。全仓库只有脚手架 GET /，返回 Hello World!。
+- auth、users、island、records、ai-agent、mailbox 均为空 Module，没有 Controller。
+
+没做什么
+- 未改代码，未连 MySQL，未跑 migration。
+
+下一步
+- 仍等用户审核 docs/superpowers/specs/2026-10-10-api-scope-design.md。通过前不写业务路由，不建库。
+
+============================================================
+[2026-08-14] 按已审核范围实现后端，未建表
+============================================================
+做了什么
+- 用户确认登录按 opaque session，不按需求文档的 JWT。
+- 更新 prisma/schema.prisma：User 增加公开 openid 与 wechat_openid_hash；新增 AuthSession、ChatMessage；CheckInRecord 增加 check_in_date，并按用户+日期唯一。
+- 实现登录、注销、打卡、岛屿、信箱、精灵 WebSocket 双跳。统一响应 { code, data, msg }。
+- prisma validate 与 prisma generate 已通过。tsc、eslint、23 个单测通过。单测不连库。
+- PrismaService 启动时不连接，避免 MySQL 未就绪时进程起不来。
+
+没做什么
+- 未跑 prisma migrate，未建表，未改小程序。
+- 资产图片仍是占位 HTTPS 地址。模型密钥、微信 appsecret 未写入仓库。
+
+下一步
+- 等用户提供可连接的 MySQL 后再 migrate。
+- 核对 .env：DATABASE_URL、WX_APPID、WX_APPSECRET、AUTH_TOKEN_SECRET、WECHAT_HASH_SECRET、AI_BASE_URL、AI_API_KEY、AI_SMALL_MODEL、AI_LARGE_MODEL、ASSET_IMAGE_URLS。
+
+============================================================
+[2026-08-14] 推送后端与 Docker 部署工作流
+============================================================
+做了什么
+- 增加 Dockerfile、docker-compose.yml、deploy/remote-deploy.sh、.github/workflows/deploy.yml。
+- push 到 main 后，Actions 构建镜像并 SSH 到阿里云。MySQL 与 API 用 Compose 跑在服务器上。
+- 初始 migration 已写入 prisma/migrations，部署时在容器内 prisma migrate deploy。
+- .env 不入库。服务器密钥只放 /root/apps/healthy-island-api/.env。GitHub 只放连接用的 ALIYUN_HOST、ALIYUN_PORT、ALIYUN_USER、ALIYUN_SSH_KEY_B64。
+
+没做什么
+- 未在阿里云创建 .env，未配 GitHub Secrets，因此推送后首次部署会因为缺密钥失败。
+- API 只绑定 127.0.0.1:3000，外网暂不可访问。
+
+下一步
+- 用户在 GitHub 补上面四个 Secrets 后，再在服务器写好业务 .env，然后重跑部署。

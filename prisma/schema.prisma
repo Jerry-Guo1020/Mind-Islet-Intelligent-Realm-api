@@ -7,24 +7,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// 微信用户。id 即签发 JWT 使用的 UID。
+/// 微信用户。对外 id 是 cuid。openid 是公开标识，不是微信 openid。
 model User {
-  id        String   @id @default(cuid())
-  openid    String   @unique
-  nickname  String?
-  avatar    String?
-  createdAt DateTime @default(now()) @map("created_at")
+  id               String    @id @default(cuid())
+  openid           String    @unique
+  wechatOpenidHash String?   @unique @map("wechat_openid_hash")
+  nickname         String
+  avatar           String
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastLoginAt      DateTime? @map("last_login_at")
 
-  records CheckInRecord[]
-  assets  IslandAsset[]
+  sessions AuthSession[]
+  records  CheckInRecord[]
+  assets   IslandAsset[]
+  messages ChatMessage[]
 
   @@map("users")
 }
 
-/// 一次成功打卡：情绪、日记正文、AI 鼓励语。
+/// 可注销的登录态。库里只存 token 的 HMAC，不存原文。
+model AuthSession {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("auth_sessions")
+}
+
+/// 一次成功打卡：情绪、日记正文、AI 鼓励语。同一用户同一自然日只能有一条。
 model CheckInRecord {
   id        String   @id @default(cuid())
   userId    String   @map("user_id")
+  /// 上海时区的自然日，格式 YYYY-MM-DD，用来限制每天一次。
+  checkInDate String @map("check_in_date") @db.Char(10)
   moodType  MoodType @map("mood_type")
   content   String   @db.Text
   aiReply   String?  @map("ai_reply") @db.Text
@@ -34,6 +56,7 @@ model CheckInRecord {
   asset  IslandAsset?
   nodes  GraphNode[]
 
+  @@unique([userId, checkInDate])
   @@index([userId, createdAt])
   @@map("check_in_records")
 }
@@ -56,13 +79,27 @@ model IslandAsset {
   @@map("island_assets")
 }
 
-/// 从打卡正文抽出的情绪关键词。与打卡记录多对多。
+/// 从打卡正文抽出的情绪关键词。与打卡记录多对多，关键词全局唯一。
 model GraphNode {
-  id      String   @id @default(cuid())
-  keyword String   @unique
+  id      String          @id @default(cuid())
+  keyword String          @unique
   records CheckInRecord[]
 
   @@map("graph_nodes")
+}
+
+/// 精灵每一轮对话。用户输入和拼接完成的助手回复各一行。
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  role      ChatRole
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("chat_messages")
 }
 
 /// 情绪选择器。接口传枚举值，前端展示中文。
@@ -80,4 +117,9 @@ enum AssetType {
   tree
   house
   house_blue
+}
+
+enum ChatRole {
+  user
+  assistant
 }

@@ -1,5 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { RecordsModule } from '../records/records.module';
+import { MailboxController } from './mailbox.controller';
+import { MailboxService } from './mailbox.service';
 
-/** 提取情绪标签，组装图谱数据。 */
-@Module({})
+@Module({
+  imports: [AuthModule, RecordsModule],
+  controllers: [MailboxController],
+  providers: [MailboxService],
+})
 export class MailboxModule {}
