@@ -8,8 +8,8 @@ const LINES: Record<MoodType, string> = {
   ecstatic: '今天的岛上出了太阳，你的高兴我收到了。',
   calm: '岛上很安静，你今天把自己安放得很好。',
   tired: '累了就先靠岸，明天的路可以慢慢走。',
-  anxious: '今天岛上下雨了，你似乎有些难过，我陪你听听雨声吧。',
-  sad: '今天岛上下雨了，你似乎有些难过，我陪你听听雨声吧。',
+  anxious: '心里装着事的时候，先陪自己站一会儿，不急着想明白。',
+  sad: '难过不用急着好起来，我陪你听听雨声。',
 };
 
 export class TemplateEncouragement implements EncouragementWriter {

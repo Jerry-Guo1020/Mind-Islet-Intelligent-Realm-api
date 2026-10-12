@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { moodLabel } from '../../common/mood';
+import { parseMonth, parseYear } from '../../common/validation';
 import { parseMood } from '../records/records.service';
 
 export interface MailboxQuery {
@@ -50,6 +52,7 @@ export class MailboxService {
     return records.map((record) => ({
       id: record.id,
       moodType: record.moodType,
+      moodLabel: moodLabel(record.moodType),
       excerpt: record.content.slice(0, 48),
       checkInDate: record.checkInDate,
       createdAt: record.createdAt,
@@ -65,6 +68,7 @@ export class MailboxService {
     return {
       id: record.id,
       moodType: record.moodType,
+      moodLabel: moodLabel(record.moodType),
       content: record.content,
       aiReply: record.aiReply,
       checkInDate: record.checkInDate,
@@ -79,11 +83,12 @@ export class MailboxService {
   ): Prisma.CheckInRecordWhereInput {
     const where: Prisma.CheckInRecordWhereInput = { userId };
     if (query.mood) where.moodType = parseMood(query.mood);
-    if (query.year && query.month) {
-      const month = query.month.padStart(2, '0');
-      where.checkInDate = { startsWith: `${query.year}-${month}` };
-    } else if (query.year) {
-      where.checkInDate = { startsWith: `${query.year}-` };
+    const year = parseYear(query.year);
+    const month = parseMonth(query.month);
+    if (year) {
+      where.checkInDate = {
+        startsWith: month ? `${year}-${month}` : `${year}-`,
+      };
     }
     return where;
   }

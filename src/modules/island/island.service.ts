@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MoodType } from '@prisma/client';
+import { AssetType, MoodType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { shanghaiDate } from '../../common/crypto.util';
+import { ASSET_META } from '../../common/assetMeta';
+import { moodLabel } from '../../common/mood';
 
 @Injectable()
 export class IslandService {
@@ -32,6 +34,7 @@ export class IslandService {
     const moodType = record?.moodType ?? MoodType.calm;
     return {
       moodType,
+      moodLabel: moodLabel(moodType),
       weather:
         moodType === MoodType.anxious || moodType === MoodType.sad
           ? 'rain'
@@ -43,22 +46,26 @@ export class IslandService {
 
 function toAssetView(asset: {
   id: string;
-  assetType: string;
+  assetType: AssetType;
   posX: number;
   posY: number;
   zIndex: number;
   imgUrl: string;
   record: { checkInDate: string; moodType: MoodType; createdAt: Date };
 }) {
+  const meta = ASSET_META[asset.assetType];
   return {
     id: asset.id,
     assetType: asset.assetType,
+    assetName: meta.name,
+    assetTypeLabel: meta.typeLabel,
     posX: asset.posX,
     posY: asset.posY,
     zIndex: asset.zIndex,
     imgUrl: asset.imgUrl,
     checkInDate: asset.record.checkInDate,
     moodType: asset.record.moodType,
+    moodLabel: moodLabel(asset.record.moodType),
     createdAt: asset.record.createdAt,
   };
 }

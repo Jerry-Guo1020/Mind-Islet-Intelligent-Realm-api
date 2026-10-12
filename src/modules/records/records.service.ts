@@ -7,7 +7,10 @@ import {
 import { AssetType, MoodType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { shanghaiDate } from '../../common/crypto.util';
-import { ASSET_BY_MOOD } from '../../common/assetMeta';
+import { metaForMood } from '../../common/assetMeta';
+import { moodLabel } from '../../common/mood';
+import { growthLabel } from '../progress/progress';
+import { ProgressService } from '../progress/progress.service';
 import type { EncouragementWriter } from './encouragement';
 import { extractKeywords } from './keywords';
 
@@ -32,6 +35,7 @@ export class RecordsService {
     private readonly prisma: PrismaService,
     @Inject(ENCOURAGEMENT_WRITER)
     private readonly encouragement: EncouragementWriter,
+    private readonly progress: ProgressService,
   ) {}
 
   async create(userId: string, input: CreateRecordInput, now = new Date()) {
@@ -49,12 +53,13 @@ export class RecordsService {
     }
 
     const aiReply = await this.encouragement.write({ moodType, content });
-    const assetType = ASSET_BY_MOOD[moodType];
+    const meta = metaForMood(moodType);
+    const assetType = meta.assetType;
     const keywords = extractKeywords(content);
     const position = await this.nextPosition(userId);
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const record = await tx.checkInRecord.create({
           data: {
             userId,
@@ -102,6 +107,24 @@ export class RecordsService {
           keywords,
         };
       });
+      // 打卡成功后岛屿会长大，把新的成长状态一并返回，避免客户端再拉一次。
+      const snapshot = await this.progress.snapshot(userId, now);
+      return {
+        ...created,
+        moodLabel: moodLabel(moodType),
+        assetName: meta.name,
+        assetTypeLabel: meta.typeLabel,
+        assetRelation: meta.relation,
+        growthStage: snapshot.growthStage,
+        growthLabel: growthLabel(snapshot.growthStage),
+        totalCheckIns: snapshot.totalCheckIns,
+        streak: snapshot.streak,
+        asset: {
+          ...created.asset,
+          assetName: meta.name,
+          assetTypeLabel: meta.typeLabel,
+        },
+      };
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
