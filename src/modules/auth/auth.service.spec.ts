@@ -93,16 +93,29 @@ function memoryPrisma() {
 }
 
 describe('AuthService', () => {
-  const env = {
-    AUTH_TOKEN_SECRET: 'token-secret',
-    WECHAT_HASH_SECRET: 'wechat-secret',
-    AUTH_SESSION_TTL_SECONDS: '2592000',
+  const originalEnv = {
+    AUTH_TOKEN_SECRET: process.env.AUTH_TOKEN_SECRET,
+    WECHAT_HASH_SECRET: process.env.WECHAT_HASH_SECRET,
+    AUTH_SESSION_TTL_SECONDS: process.env.AUTH_SESSION_TTL_SECONDS,
   };
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  beforeEach(() => {
+    process.env.AUTH_TOKEN_SECRET = 'token-secret';
+    process.env.WECHAT_HASH_SECRET = 'wechat-secret';
+    process.env.AUTH_SESSION_TTL_SECONDS = '2592000';
+  });
 
   function setup(codeToSession: WechatClient['codeToSession']) {
     const db = memoryPrisma();
     const wechat: WechatClient = { codeToSession };
-    const service = new AuthService(db.client as never, wechat, env);
+    const service = new AuthService(db.client as never, wechat);
     return { db, service };
   }
 

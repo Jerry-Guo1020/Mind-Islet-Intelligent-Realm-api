@@ -19,11 +19,12 @@ export class CompanionService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(MODEL_CLIENT) private readonly model: ModelClient,
-    private readonly env: { small: string; large: string } = {
-      small: process.env.AI_SMALL_MODEL || 'small-model',
-      large: process.env.AI_LARGE_MODEL || 'large-model',
-    },
   ) {}
+
+  private readonly env = {
+    small: process.env.AI_SMALL_MODEL || 'small-model',
+    large: process.env.AI_LARGE_MODEL || 'large-model',
+  };
 
   async respond(
     input: CompanionTurnInput,

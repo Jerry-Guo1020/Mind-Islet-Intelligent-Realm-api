@@ -95,3 +95,21 @@
 
 下一步
 - 用户在 GitHub 补上面四个 Secrets 后，再在服务器写好业务 .env，然后重跑部署。
+
+============================================================
+[2026-10-11] 首次部署测试
+============================================================
+做了什么
+- 推送 d0da646 后，Actions 第 1 次因 SSH Secret 还没配而失败。用户补齐后第 2 次仍失败，日志是 base64: invalid input，说明 ALIYUN_SSH_KEY_B64 不是单行合法 base64。
+- 用户修正后，第 4 次已 SSH 成功，文件到达 /root/apps/healthy-island-api。
+- 已在服务器创建 .env，权限 600。MySQL 密码和两个 HMAC 密钥由服务器本地随机生成，未回传到本地或仓库。微信和模型密钥仍为空。
+- GHCR 镜像 ghcr.io/jerry-guo1020/healthy-island-api 已构建。匿名访问 manifest 返回 401，服务器 docker compose pull 因此挂住。已停止卡住的 pull 进程。
+
+没做什么
+- 未把镜像改成公开，当前 GitHub 凭据没有 packages 写权限。
+- 未启动 API，未执行 prisma migrate。
+- 未把任何密钥写入仓库或会话日志。
+
+下一步
+- 在 GitHub 把容器包 healthy-island-api 设为 Public，然后重跑 Actions。
+- 微信、模型密钥仍需用户之后写入服务器 .env，不入库。

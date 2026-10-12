@@ -35,8 +35,11 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(WECHAT_CLIENT) private readonly wechat: WechatClient,
-    private readonly env: AuthEnv = readAuthEnv(),
   ) {}
+
+  private get env(): AuthEnv {
+    return readAuthEnv();
+  }
 
   async login(input: LoginInput = {}) {
     const provider = input.provider?.trim().toLowerCase();
