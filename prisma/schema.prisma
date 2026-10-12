@@ -16,6 +16,12 @@ model User {
   avatar           String
   createdAt        DateTime  @default(now()) @map("created_at")
   lastLoginAt      DateTime? @map("last_login_at")
+  /// 精灵引导是否看过了。
+  spiritOnboarded  Boolean   @default(false) @map("spirit_onboarded")
+  /// 提醒开关。到点提醒由客户端本身完成，这里只存偏好。
+  reminderEnabled  Boolean   @default(false) @map("reminder_enabled")
+  /// 提醒时间，HH:mm。未设置为空。
+  reminderTime     String?   @map("reminder_time") @db.Char(5)
 
   sessions AuthSession[]
   records  CheckInRecord[]

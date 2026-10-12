@@ -95,6 +95,7 @@ export class AuthService {
         nickname: user.nickname,
         avatar: user.avatar,
         createdAt: user.createdAt,
+        spiritOnboarded: user.spiritOnboarded,
       },
     };
   }

@@ -13,6 +13,7 @@ interface MemoryUser {
   nickname: string;
   avatar: string;
   createdAt: Date;
+  spiritOnboarded?: boolean;
 }
 
 interface MemorySession {
@@ -39,7 +40,12 @@ function memoryPrisma() {
             (user) => user.wechatOpenidHash === where.wechatOpenidHash,
           ) ?? null,
         create: ({ data }: { data: Omit<MemoryUser, 'id' | 'createdAt'> }) => {
-          const user = { ...data, id: `user-${++seq}`, createdAt: new Date() };
+          const user = {
+            ...data,
+            id: `user-${++seq}`,
+            createdAt: new Date(),
+            spiritOnboarded: false,
+          };
           users.push(user);
           return user;
         },
@@ -203,6 +209,18 @@ describe('AuthService', () => {
     await expect(
       service.authenticate(`Bearer ${result.token}`),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('reports whether the spirit introduction was already seen', async () => {
+    const { db, service } = setup(() =>
+      Promise.resolve({ openid: 'wx-openid-1' }),
+    );
+    const first = await service.login({ provider: 'weixin', code: 'good' });
+    expect(first.userInfo.spiritOnboarded).toBe(false);
+
+    db.users[0].spiritOnboarded = true;
+    const second = await service.login({ provider: 'weixin', code: 'good' });
+    expect(second.userInfo.spiritOnboarded).toBe(true);
   });
 
   it('does not rewrite lastUsedAt when the session was used a minute ago', async () => {
