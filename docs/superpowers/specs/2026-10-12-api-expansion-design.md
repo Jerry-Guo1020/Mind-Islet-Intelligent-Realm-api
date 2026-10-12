@@ -92,9 +92,10 @@ model User {
 ## 结构
 
 - 抽出 `src/modules/model/`，承载 `MODEL_CLIENT`、`OpenAiModelClient`。`ai-agent` 与 `records` 都 import 它。`records` 生成鼓励语要调模型，若让它依赖 `ai-agent`，边界就错了。
-- 新增无 IO 的纯函数模块：`src/common/mood.ts`、`src/common/assetMeta.ts`、`src/modules/island/growth.ts`、`src/common/validation.ts`。
+- 新增无 IO 的纯函数模块：`src/common/mood.ts`、`src/common/assetMeta.ts`、`src/modules/progress/progress.ts`、`src/common/validation.ts`。
 - `EncouragementWriter` 接缝已存在，新增 `AiEncouragement` 实现，在 `RecordsModule` 里按 `AI_API_KEY` 是否为空选择模型实现或模板实现。模型失败、超时（8 秒）或返回空串时回落到模板。同时修掉模板里焦虑与悲伤共用一句的问题。
-- `me` 模块含 `MeController`、`MeService`，`MeService` 复用 `growth.ts`、`assetMeta.ts` 的纯函数。
+- 新增 `progress` 模块，`ProgressService.snapshot` 提供入岛天数、累计打卡、连续天数、成长阶段。`me` 与 `records` 都复用它，统计只实现一处。
+- `me` 模块含 `MeController`、`MeService`，`MeService` 复用 `progress.ts`、`assetMeta.ts` 的纯函数。
 - 新增 `src/app.module.spec.ts`，编译整个 `AppModule`。这个测试能拦住 10-12 那次 `AuthEnv` 被 Nest 当成依赖、运行时变成 `Object` 的启动崩溃。
 
 ## 健壮性
