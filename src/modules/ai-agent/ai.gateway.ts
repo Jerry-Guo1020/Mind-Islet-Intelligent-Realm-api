@@ -12,6 +12,32 @@ interface ClientMessage {
   userId?: string;
 }
 
+/** 单条消息的长度上限。超出的直接退回，不进模型。 */
+export const MAX_MESSAGE_LENGTH = 500;
+
+export type ParsedClientMessage =
+  | { ok: true; message: string; currentMood?: string }
+  | { ok: false; reason: string };
+
+/** 小程序发来的原文可能是任何东西，先收窄再交给精灵。 */
+export function parseClientMessage(raw: string): ParsedClientMessage {
+  let body: ClientMessage;
+  try {
+    body = JSON.parse(raw) as ClientMessage;
+  } catch {
+    return { ok: false, reason: 'invalid message' };
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, reason: 'invalid message' };
+  }
+  const message = typeof body.message === 'string' ? body.message.trim() : '';
+  if (!message) return { ok: false, reason: 'message is required' };
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    return { ok: false, reason: `message 超过 ${MAX_MESSAGE_LENGTH} 字` };
+  }
+  return { ok: true, message, currentMood: body.currentMood };
+}
+
 @Injectable()
 export class AiGateway implements OnModuleInit, OnModuleDestroy {
   private server?: WebSocketServer;
@@ -70,15 +96,13 @@ export class AiGateway implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleMessage(socket: WebSocket, userId: string, raw: string) {
-    let body: ClientMessage;
-    try {
-      body = JSON.parse(raw) as ClientMessage;
-    } catch {
-      socket.send(JSON.stringify({ type: 'error', msg: 'invalid message' }));
+    const parsed = parseClientMessage(raw);
+    if (!parsed.ok) {
+      socket.send(JSON.stringify({ type: 'error', msg: parsed.reason }));
       return;
     }
     await this.companion.respond(
-      { userId, message: body.message ?? '', currentMood: body.currentMood },
+      { userId, message: parsed.message, currentMood: parsed.currentMood },
       (event) => {
         if (socket.readyState === WebSocket.OPEN)
           socket.send(JSON.stringify(event));

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { MoodType } from '@prisma/client';
 import { moodLabel } from '../../common/mood';
+import { withTimeout } from '../../common/with-timeout';
 import {
   MODEL_CLIENT,
   type ChatTurn,
@@ -51,9 +52,8 @@ export class AiEncouragement implements EncouragementWriter {
     try {
       // 每次现读环境变量，避免在构造函数里把配置固化成对象。
       const model = process.env.AI_LARGE_MODEL || 'large-model';
-      const text = await withTimeout(
+      const text = await withTimeoutFor(
         this.model.complete(model, encouragementMessages(input)),
-        ENCOURAGEMENT_TIMEOUT_MS,
       );
       const trimmed = text.trim();
       if (!trimmed) return TEMPLATE.write({ moodType: input.moodType });
@@ -67,21 +67,10 @@ export class AiEncouragement implements EncouragementWriter {
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('encouragement timeout')),
-      ms,
-    );
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      },
-    );
-  });
+function withTimeoutFor<T>(promise: Promise<T>): Promise<T> {
+  return withTimeout(
+    promise,
+    ENCOURAGEMENT_TIMEOUT_MS,
+    'encouragement timeout',
+  );
 }

@@ -6,6 +6,8 @@ import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalFilters(new ApiExceptionFilter());
+  // 收到 SIGTERM 时先关 WebSocket 再退出，避免连接被硬断。
+  app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 3000);
 }
 void bootstrap();
