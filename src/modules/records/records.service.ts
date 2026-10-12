@@ -7,18 +7,11 @@ import {
 import { AssetType, MoodType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { shanghaiDate } from '../../common/crypto.util';
+import { ASSET_BY_MOOD } from '../../common/assetMeta';
 import type { EncouragementWriter } from './encouragement';
 import { extractKeywords } from './keywords';
 
 export const ENCOURAGEMENT_WRITER = 'ENCOURAGEMENT_WRITER';
-
-const ASSET_BY_MOOD: Record<MoodType, AssetType> = {
-  ecstatic: AssetType.flower,
-  calm: AssetType.grass,
-  tired: AssetType.house,
-  anxious: AssetType.tree,
-  sad: AssetType.house_blue,
-};
 
 const DEFAULT_IMAGES: Record<AssetType, string> = {
   flower: 'https://r2.example.com/assets/flower.png',

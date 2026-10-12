@@ -116,10 +116,12 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('User token is no longer valid');
     }
-    await this.prisma.authSession.update({
-      where: { tokenHash },
-      data: { lastUsedAt: new Date() },
-    });
+    if (shouldRecordUsage(session.lastUsedAt)) {
+      await this.prisma.authSession.update({
+        where: { tokenHash },
+        data: { lastUsedAt: new Date() },
+      });
+    }
     return session.user;
   }
 
@@ -145,6 +147,16 @@ export class AuthService {
     });
     return { loggedOut: true };
   }
+}
+
+/** 距上次记录不足 5 分钟就不再写库，避免每次请求都更新会话行。 */
+export const SESSION_USAGE_INTERVAL_MS = 5 * 60 * 1000;
+
+export function shouldRecordUsage(
+  lastUsedAt: Date | null | undefined,
+): boolean {
+  if (!lastUsedAt) return true;
+  return Date.now() - lastUsedAt.getTime() >= SESSION_USAGE_INTERVAL_MS;
 }
 
 export function extractBearer(authorization?: string): string {

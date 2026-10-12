@@ -1,6 +1,6 @@
 import { MoodType } from '@prisma/client';
 import { CompanionService, FALLBACK_REPLY } from './companion.service';
-import { ModelClient } from './model.client';
+import { ModelClient } from '../model/model.client';
 
 function prismaStub() {
   const messages: { role: string; content: string }[] = [];

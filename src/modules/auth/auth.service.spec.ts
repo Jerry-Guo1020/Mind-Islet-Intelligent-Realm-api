@@ -20,15 +20,18 @@ interface MemorySession {
   tokenHash: string;
   expiresAt: Date;
   revokedAt: Date | null;
+  lastUsedAt?: Date | null;
 }
 
 function memoryPrisma() {
   const users: MemoryUser[] = [];
   const sessions: MemorySession[] = [];
+  const sessionUpdates: Partial<MemorySession>[] = [];
   let seq = 0;
   return {
     users,
     sessions,
+    sessionUpdates,
     client: {
       user: {
         findUnique: ({ where }: { where: { wechatOpenidHash: string } }) =>
@@ -84,6 +87,7 @@ function memoryPrisma() {
             (item) => item.tokenHash === where.tokenHash,
           );
           if (!session) return null;
+          sessionUpdates.push({ ...data, tokenHash: where.tokenHash });
           Object.assign(session, data);
           return session;
         },
@@ -199,5 +203,41 @@ describe('AuthService', () => {
     await expect(
       service.authenticate(`Bearer ${result.token}`),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('does not rewrite lastUsedAt when the session was used a minute ago', async () => {
+    const { db, service } = setup(() =>
+      Promise.resolve({ openid: 'wx-openid-1' }),
+    );
+    const result = await service.login({ provider: 'weixin', code: 'good' });
+    db.sessions[0].lastUsedAt = new Date(Date.now() - 60_000);
+
+    await service.authenticate(`Bearer ${result.token}`);
+
+    expect(db.sessionUpdates).toHaveLength(0);
+  });
+
+  it('records lastUsedAt when the session has never been used', async () => {
+    const { db, service } = setup(() =>
+      Promise.resolve({ openid: 'wx-openid-1' }),
+    );
+    const result = await service.login({ provider: 'weixin', code: 'good' });
+
+    await service.authenticate(`Bearer ${result.token}`);
+
+    expect(db.sessionUpdates).toHaveLength(1);
+    expect(db.sessionUpdates[0].lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it('refreshes lastUsedAt once the session sat idle past five minutes', async () => {
+    const { db, service } = setup(() =>
+      Promise.resolve({ openid: 'wx-openid-1' }),
+    );
+    const result = await service.login({ provider: 'weixin', code: 'good' });
+    db.sessions[0].lastUsedAt = new Date(Date.now() - 6 * 60_000);
+
+    await service.authenticate(`Bearer ${result.token}`);
+
+    expect(db.sessionUpdates).toHaveLength(1);
   });
 });

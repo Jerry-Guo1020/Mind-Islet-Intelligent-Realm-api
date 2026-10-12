@@ -34,7 +34,12 @@ export class AiGateway implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await new Promise<void>((resolve) => this.server?.close(() => resolve()));
+    const server = this.server;
+    if (!server) return;
+    // 先断开长连接，否则 close 的回调要等到所有客户端自己走才会触发，
+    // 进程收到 SIGTERM 时会一直等下去。
+    for (const client of server.clients) client.terminate();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
   private async handleConnection(socket: WebSocket, request: IncomingMessage) {

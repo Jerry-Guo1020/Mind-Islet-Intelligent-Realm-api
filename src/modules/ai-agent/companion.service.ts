@@ -2,8 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { MoodType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { shanghaiDate } from '../../common/crypto.util';
-import { MODEL_CLIENT, type ModelClient } from './model.client';
-import type { ChatTurn } from './model.client';
+import { MODEL_CLIENT, type ModelClient } from '../model/model.client';
+import type { ChatTurn } from '../model/model.client';
 import { parseTriage, replyMessages, triageMessages } from './prompts';
 
 export const FALLBACK_REPLY = '我在这里。今天先不用想太多，我们慢慢说。';

@@ -1,4 +1,4 @@
-import { ChatTurn } from './model.client';
+import { ChatTurn } from '../model/model.client';
 
 export const STRATEGIES = ['empathy', 'cbt', 'sfbt', 'celebrate'] as const;
 export type Strategy = (typeof STRATEGIES)[number];
