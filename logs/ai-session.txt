@@ -113,3 +113,42 @@
 下一步
 - 在 GitHub 把容器包 healthy-island-api 设为 Public，然后重跑 Actions。
 - 微信、模型密钥仍需用户之后写入服务器 .env，不入库。
+
+============================================================
+[2026-10-12] 部署通过
+============================================================
+做了什么
+- 用户公开镜像后，Actions 第 5 次不再被 GHCR 拒绝。失败原因变成阿里云访问 Docker Hub 超时。服务器本地已有 mysql:8.4，用 docker compose up --pull never 避开了这次超时。
+- API 容器重启，原因是 AuthService 构造函数里的 AuthEnv 被 Nest 当成依赖，运行时变成 Object。CompanionService 也有同类写法。
+- 两处都改为服务内部读取环境变量。Auth 单测通过环境变量注入测试密钥，结束后恢复原值。tsc、eslint、23 个单测通过。
+- 修复提交 557771e，与远程的部署测试注释合并为 8a8d12f。Actions run 38201177679 全部成功。
+- 服务器上 API 与 MySQL 都在运行。本机 127.0.0.1:3000 返回 Hello World!。表已创建：users、auth_sessions、check_in_records、island_assets、graph_nodes、chat_messages，以及 Prisma 迁移表和关联表。
+
+没做什么
+- 未把 API 暴露到公网，端口仍只绑定 127.0.0.1。
+- 微信和模型密钥仍为空。登录和精灵对话还不能真正调用外部服务。
+- 未把服务器 .env 或任何密钥写入仓库。
+
+下一步
+- 需要外网访问时再改端口绑定和阿里云安全组。
+- 用户提供微信与模型配置后，只写入服务器 .env，然后重启 API。
+
+============================================================
+[2026-10-12] 接口扩充：个人中心、精灵、打卡与健壮性
+============================================================
+做了什么
+- 按 docs/superpowers/specs/2026-10-12-api-expansion-design.md 分四阶段实现，本地提交 dd7f30d、a3e730f、16febcd、51e388d。计划与执行记录在 docs/superpowers/plans/2026-10-12-api-expansion.md。
+- 阶段1：抽出 ModelModule 共用模型客户端；新增 progress（成长阶段、入岛天数、连续打卡）与 common/mood、common/assetMeta、common/validation；修掉 AiGateway 在没有 server 时 onModuleDestroy 永不 resolve 的挂死问题。
+- 阶段2：users 表加 spirit_onboarded、reminder_enabled、reminder_time；用 prisma migrate diff 离线生成 migration，未执行 migrate dev。新增 GET/PATCH /api/me、GET/PATCH /api/me/settings、POST /api/me/spirit/onboard；登录 userInfo 增加 spiritOnboarded。
+- 阶段3：岛屿资产、天气、信箱信件与打卡返回值补中文名（assetName/assetTypeLabel/moodLabel/assetRelation）与成长统计（growthStage/growthLabel/totalCheckIns/streak）；信箱 year/month 严格校验；鼓励语在配置模型密钥时走模型，8 秒超时回落模板，焦虑与悲伤模板文案拆成两句。
+- 阶段4：新增 GET /api/ai/greeting、GET /api/ai/messages（limit 默认 20、上限 50，before 为 ISO）；WebSocket 消息非 JSON、空、超 500 字回 { type: 'error' } 且不进模型；main.ts 开启 shutdown hooks。
+- 验证：npx tsc --noEmit 通过，eslint 通过，jest 18 套件 132 测试全绿（基线 9/23）。检查在 /tmp/verify 跑，未连数据库、未启动 API。
+
+没做什么
+- 未新增 npm 依赖，未改小程序，未读取任何环境变量文件，未对数据库执行任何迁移。
+- 未实现订阅消息推送、P12 隐私与关于接口、手动摆放资产、删除打卡与聊天记录、P02 聚合接口。
+- 未推送任何提交。推送会触发阿里云自动部署。
+
+下一步
+- 部署前在服务器执行 npx prisma migrate deploy，应用 20261012120000_add_user_settings。
+- 是否推送这四个提交由用户决定。
