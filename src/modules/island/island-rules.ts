@@ -2,16 +2,20 @@
 
 export const SEASONS = ['spring', 'summer', 'autumn', 'winter'] as const;
 export const UNLOCK_DAYS_THRESHOLD = 30;
-export const REQUIRED_ITEMS = ['tree', 'fence', 'house', 'special_tree'] as const;
+export const REQUIRED_ITEMS = ['tree', 'house', 'deluxe_house'] as const;
+export const SEASON_ITEMS = ['tree', 'fence', 'house', 'deluxe_house'] as const;
 
 export const ITEM_PRICES: Record<string, number> = {
   tree: 0,
   fence: 20,
   house: 30,
-  special_tree: 40,
+  deluxe_house: 40,
 };
 
-const MOODS: Record<string, { happy: number; disappoint: number; weather: string }> = {
+const MOODS: Record<
+  string,
+  { happy: number; disappoint: number; weather: string }
+> = {
   ecstatic: { happy: 15, disappoint: 0, weather: 'sunny' },
   calm: { happy: 0, disappoint: 0, weather: 'cloudy' },
   tired: { happy: 0, disappoint: 5, weather: 'rainy' },
@@ -66,9 +70,11 @@ function fail(reason: string): never {
 }
 
 export function offsetPoints(happyPoints: number, disappointPoints: number) {
-  if (!Number.isInteger(happyPoints) || !Number.isInteger(disappointPoints)) fail('invalid_points');
+  if (!Number.isInteger(happyPoints) || !Number.isInteger(disappointPoints))
+    fail('invalid_points');
   if (happyPoints < 0 || disappointPoints < 0) fail('invalid_points');
-  if (happyPoints === 0 || disappointPoints === 0) return { happyPoints, disappointPoints };
+  if (happyPoints === 0 || disappointPoints === 0)
+    return { happyPoints, disappointPoints };
   if (happyPoints >= disappointPoints) {
     return { happyPoints: happyPoints - disappointPoints, disappointPoints: 0 };
   }
@@ -81,14 +87,27 @@ function dayNumber(date: string) {
 }
 
 function hasItem(state: IslandState, season: string, itemId: string) {
-  return state.placements.some((item) => item.season === season && item.itemId === itemId);
+  return state.placements.some(
+    (item) => item.season === season && item.itemId === itemId,
+  );
+}
+
+/**
+ * 拥有一次就四季通用：只要在任何一个季节拥有过，就算拥有。
+ * 不这样做的话，树只在春天发过一次（redeemItem 也不让买），夏天往后永远凑不开换季条件。
+ * 前端 utils/island-rules.js 的 ownsAnySeason() 是同一个判断。
+ */
+function ownsAnySeason(state: IslandState, itemId: string) {
+  return state.placements.some((item) => item.itemId === itemId);
 }
 
 export function settleCheckIn(state: IslandState, mood: string, date: string) {
   const score = MOODS[mood];
   if (!score) fail('invalid_mood');
   if (state.lastCheckInDate === date) fail('already_checked_in');
-  const gap = state.lastCheckInDate ? dayNumber(date) - dayNumber(state.lastCheckInDate) : null;
+  const gap = state.lastCheckInDate
+    ? dayNumber(date) - dayNumber(state.lastCheckInDate)
+    : null;
   if (gap !== null && gap < 1) fail('already_checked_in');
 
   const next: IslandState = {
@@ -101,19 +120,31 @@ export function settleCheckIn(state: IslandState, mood: string, date: string) {
   };
   let grantedTree = false;
   if (state.totalCheckIns === 0) {
-    next.placements.push({ season: next.season, itemId: 'tree', source: 'first_checkin' });
+    next.placements.push({
+      season: next.season,
+      itemId: 'tree',
+      source: 'first_checkin',
+    });
     grantedTree = true;
   }
-  const points = offsetPoints(next.happyPoints + score.happy, next.disappointPoints + score.disappoint);
+  const points = offsetPoints(
+    next.happyPoints + score.happy,
+    next.disappointPoints + score.disappoint,
+  );
   next.happyPoints = points.happyPoints;
   next.disappointPoints = points.disappointPoints;
   next.specialReward = resolveSpecialReward();
-  return { state: next, grantedTree, delta: { happy: score.happy, disappoint: score.disappoint } };
+  return {
+    state: next,
+    grantedTree,
+    delta: { happy: score.happy, disappoint: score.disappoint },
+  };
 }
 
 export function redeemItem(state: IslandState, itemId: string) {
-  if (!REQUIRED_ITEMS.includes(itemId as (typeof REQUIRED_ITEMS)[number])) fail('unknown_item');
-  if (itemId === 'tree') fail('not_redeemable');
+  if (!SEASON_ITEMS.includes(itemId as (typeof SEASON_ITEMS)[number]))
+    fail('unknown_item');
+  if (itemId === 'tree' || itemId === 'fence') fail('not_redeemable');
   if (hasItem(state, state.season, itemId)) fail('already_owned');
   const points = offsetPoints(state.happyPoints, state.disappointPoints);
   const price = ITEM_PRICES[itemId];
@@ -123,7 +154,10 @@ export function redeemItem(state: IslandState, itemId: string) {
       ...state,
       happyPoints: points.happyPoints - price,
       disappointPoints: points.disappointPoints,
-      placements: [...state.placements, { season: state.season, itemId, source: 'redeem' }],
+      placements: [
+        ...state.placements,
+        { season: state.season, itemId, source: 'redeem' },
+      ],
     },
   };
 }
@@ -133,9 +167,12 @@ export function switchSeason(
   options: { threshold?: number; demoSkipDays?: boolean } = {},
 ) {
   const threshold = options.threshold || UNLOCK_DAYS_THRESHOLD;
-  const missing = REQUIRED_ITEMS.filter((itemId) => !hasItem(state, state.season, itemId));
+  const missing = REQUIRED_ITEMS.filter(
+    (itemId) => !ownsAnySeason(state, itemId),
+  );
   if (missing.length) fail('season_incomplete');
-  if (!options.demoSkipDays && state.consecutiveCheckInDays < threshold) fail('days_not_enough');
+  if (!options.demoSkipDays && state.consecutiveCheckInDays < threshold)
+    fail('days_not_enough');
   const index = SEASONS.indexOf(state.season as (typeof SEASONS)[number]);
   if (index < 0 || index === SEASONS.length - 1) fail('no_next_season');
   return { state: { ...state, season: SEASONS[index + 1] } };
