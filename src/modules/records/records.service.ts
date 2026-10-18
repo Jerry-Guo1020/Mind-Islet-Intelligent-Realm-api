@@ -4,25 +4,17 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import { AssetType, MoodType, Prisma } from '@prisma/client';
+import { MoodType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { shanghaiDate } from '../../common/crypto.util';
-import { metaForMood } from '../../common/assetMeta';
 import { moodLabel } from '../../common/mood';
 import { growthLabel } from '../progress/progress';
 import { ProgressService } from '../progress/progress.service';
 import type { EncouragementWriter } from './encouragement';
 import { extractKeywords } from './keywords';
+import { IslandRuleError, emptyIsland, settleCheckIn, type IslandState } from '../island/island-rules';
 
 export const ENCOURAGEMENT_WRITER = 'ENCOURAGEMENT_WRITER';
-
-const DEFAULT_IMAGES: Record<AssetType, string> = {
-  flower: 'https://r2.example.com/assets/flower.png',
-  grass: 'https://r2.example.com/assets/grass.png',
-  tree: 'https://r2.example.com/assets/tree.png',
-  house: 'https://r2.example.com/assets/house.png',
-  house_blue: 'https://r2.example.com/assets/house-blue.png',
-};
 
 export interface CreateRecordInput {
   moodType: MoodType;
@@ -53,10 +45,7 @@ export class RecordsService {
     }
 
     const aiReply = await this.encouragement.write({ moodType, content });
-    const meta = metaForMood(moodType);
-    const assetType = meta.assetType;
     const keywords = extractKeywords(content);
-    const position = await this.nextPosition(userId);
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -69,17 +58,43 @@ export class RecordsService {
             aiReply,
           },
         });
-        const asset = await tx.islandAsset.create({
-          data: {
-            userId,
-            recordId: record.id,
-            assetType,
-            posX: position.x,
-            posY: position.y,
-            zIndex: position.z,
-            imgUrl: imageFor(assetType),
-          },
+        const current = await tx.islandProgress.findUnique({ where: { userId } });
+        const placements = current
+          ? await tx.islandPlacement.findMany({ where: { userId } })
+          : [];
+        const before: IslandState = current
+          ? {
+              happyPoints: current.happyPoints,
+              disappointPoints: current.disappointPoints,
+              totalCheckIns: current.totalCheckIns,
+              consecutiveCheckInDays: current.consecutiveCheckInDays,
+              lastCheckInDate: current.lastCheckInDate,
+              lastMood: current.lastMood,
+              season: current.season,
+              placements: placements.map((item) => ({
+                season: item.season,
+                itemId: item.itemId,
+                source: item.source,
+              })),
+              specialReward: current.specialReward,
+            }
+          : emptyIsland();
+        const settled = settleCheckIn(before, moodType, checkInDate);
+        await tx.islandProgress.upsert({
+          where: { userId },
+          create: { userId, ...progressData(settled.state) },
+          update: progressData(settled.state),
         });
+        if (settled.grantedTree) {
+          await tx.islandPlacement.create({
+            data: {
+              userId,
+              season: settled.state.season as never,
+              itemId: 'tree',
+              source: 'first_checkin',
+            },
+          });
+        }
         for (const keyword of keywords) {
           await tx.graphNode.upsert({
             where: { keyword },
@@ -96,13 +111,12 @@ export class RecordsService {
             checkInDate: record.checkInDate,
             createdAt: record.createdAt,
           },
-          asset: {
-            id: asset.id,
-            assetType: asset.assetType,
-            posX: asset.posX,
-            posY: asset.posY,
-            zIndex: asset.zIndex,
-            imgUrl: asset.imgUrl,
+          settlement: {
+            grantedTree: settled.grantedTree,
+            delta: settled.delta,
+            happyPoints: settled.state.happyPoints,
+            disappointPoints: settled.state.disappointPoints,
+            consecutiveCheckInDays: settled.state.consecutiveCheckInDays,
           },
           keywords,
         };
@@ -112,20 +126,15 @@ export class RecordsService {
       return {
         ...created,
         moodLabel: moodLabel(moodType),
-        assetName: meta.name,
-        assetTypeLabel: meta.typeLabel,
-        assetRelation: meta.relation,
         growthStage: snapshot.growthStage,
         growthLabel: growthLabel(snapshot.growthStage),
         totalCheckIns: snapshot.totalCheckIns,
         streak: snapshot.streak,
-        asset: {
-          ...created.asset,
-          assetName: meta.name,
-          assetTypeLabel: meta.typeLabel,
-        },
       };
     } catch (error) {
+      if (error instanceof IslandRuleError && error.reason === 'already_checked_in') {
+        throw new ConflictException('今天已经打过卡了');
+      }
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
@@ -135,11 +144,19 @@ export class RecordsService {
       throw error;
     }
   }
+}
 
-  private async nextPosition(userId: string) {
-    const count = await this.prisma.islandAsset.count({ where: { userId } });
-    return { x: (count % 5) * 1.5, y: Math.floor(count / 5) * 1.5, z: count };
-  }
+function progressData(state: IslandState) {
+  return {
+    happyPoints: state.happyPoints,
+    disappointPoints: state.disappointPoints,
+    totalCheckIns: state.totalCheckIns,
+    consecutiveCheckInDays: state.consecutiveCheckInDays,
+    lastCheckInDate: state.lastCheckInDate,
+    lastMood: state.lastMood as MoodType | null,
+    season: state.season as never,
+    specialReward: state.specialReward,
+  };
 }
 
 export function parseMood(value: string): MoodType {
@@ -149,11 +166,3 @@ export function parseMood(value: string): MoodType {
   return value as MoodType;
 }
 
-export function imageFor(assetType: AssetType): string {
-  const configured = process.env.ASSET_IMAGE_URLS ?? '';
-  for (const pair of configured.split(',')) {
-    const [type, url] = pair.split('|').map((item) => item.trim());
-    if (type === assetType && url?.startsWith('https://')) return url;
-  }
-  return DEFAULT_IMAGES[assetType];
-}

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { AssetType, MoodType } from '@prisma/client';
+import { MoodType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProgressService } from '../progress/progress.service';
 import { RecordsService } from './records.service';
@@ -26,22 +26,19 @@ function prismaStub() {
     checkInDate: '2026-10-12',
     createdAt: new Date('2026-10-12T10:00:00+08:00'),
   };
-  const asset = {
-    id: 'asset-1',
-    assetType: AssetType.tree,
-    posX: 3,
-    posY: 0,
-    zIndex: 2,
-    imgUrl: 'https://r2.example.com/assets/tree.png',
-  };
+  const placement = { create: jest.fn().mockResolvedValue(null) };
   return {
     record,
+    placement,
     checkInRecord: { findUnique: jest.fn().mockResolvedValue(null) },
-    islandAsset: { count: jest.fn().mockResolvedValue(2) },
     $transaction: jest.fn((run: (tx: unknown) => unknown) =>
       run({
         checkInRecord: { create: jest.fn().mockResolvedValue(record) },
-        islandAsset: { create: jest.fn().mockResolvedValue(asset) },
+        islandProgress: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          upsert: jest.fn().mockResolvedValue(null),
+        },
+        islandPlacement: placement,
         graphNode: { upsert: jest.fn().mockResolvedValue(null) },
       }),
     ),
@@ -71,7 +68,7 @@ describe('RecordsService', () => {
     expect(encouragement.write).not.toHaveBeenCalled();
   });
 
-  it('returns the asset wording and the island growth after a check-in', async () => {
+  it('returns the first tree and the island growth after a check-in', async () => {
     const prisma = prismaStub();
     const encouragement = { write: jest.fn().mockResolvedValue('我陪你') };
     const progress = progressStub();
@@ -89,25 +86,27 @@ describe('RecordsService', () => {
 
     expect(result).toEqual({
       record: prisma.record,
-      asset: {
-        id: 'asset-1',
-        assetType: AssetType.tree,
-        posX: 3,
-        posY: 0,
-        zIndex: 2,
-        imgUrl: 'https://r2.example.com/assets/tree.png',
-        assetName: '雨树',
-        assetTypeLabel: '植物',
+      settlement: {
+        grantedTree: true,
+        delta: { happy: 0, disappoint: 10 },
+        happyPoints: 0,
+        disappointPoints: 10,
+        consecutiveCheckInDays: 1,
       },
       keywords: ['明天要汇报'],
       moodLabel: '焦虑',
-      assetName: '雨树',
-      assetTypeLabel: '植物',
-      assetRelation: '焦虑的时候，岛上会种下一棵陪你听雨的树。',
       growthStage: 'sprout',
       growthLabel: '萌芽',
       totalCheckIns: 3,
       streak: 2,
+    });
+    expect(prisma.placement.create).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        season: 'spring',
+        itemId: 'tree',
+        source: 'first_checkin',
+      },
     });
     expect(progress.snapshot).toHaveBeenCalledWith(
       'user-1',

@@ -27,8 +27,43 @@ model User {
   records  CheckInRecord[]
   assets   IslandAsset[]
   messages ChatMessage[]
+  islandProgress IslandProgress?
+  islandPlacements IslandPlacement[]
 
   @@map("users")
+}
+
+/// 情绪岛进度。打卡只改这一行，不再每次长一件旧资产。
+model IslandProgress {
+  userId                 String  @id @map("user_id")
+  happyPoints            Int     @default(0) @map("happy_points")
+  disappointPoints       Int     @default(0) @map("disappoint_points")
+  totalCheckIns          Int     @default(0) @map("total_check_ins")
+  consecutiveCheckInDays Int     @default(0) @map("consecutive_check_in_days")
+  lastCheckInDate        String? @map("last_check_in_date") @db.Char(10)
+  lastMood               MoodType? @map("last_mood")
+  season                 Season  @default(spring)
+  specialReward          String? @map("special_reward")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("island_progress")
+}
+
+/// 已布置的季节物品。普通树只能由首次打卡写入。
+model IslandPlacement {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  season    Season
+  itemId    String   @map("item_id")
+  source    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, season, itemId])
+  @@index([userId])
+  @@map("island_placements")
 }
 
 /// 可注销的登录态。库里只存 token 的 HMAC，不存原文。
@@ -128,4 +163,11 @@ enum AssetType {
 enum ChatRole {
   user
   assistant
+}
+
+enum Season {
+  spring
+  summer
+  autumn
+  winter
 }

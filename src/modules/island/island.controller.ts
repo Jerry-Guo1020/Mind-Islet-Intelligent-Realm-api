@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { ok } from '../../common/api-response';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -16,6 +16,21 @@ export class IslandController {
   @Get('assets')
   async assets(@Req() request: AuthedRequest) {
     return ok(await this.island.listAssets(request.user.id));
+  }
+
+  @Get('state')
+  async state(@Req() request: AuthedRequest) {
+    return ok(await this.island.state(request.user.id));
+  }
+
+  @Post('redeem')
+  async redeem(@Req() request: AuthedRequest, @Body() body: { itemId: string }) {
+    return ok(await this.island.redeem(request.user.id, body.itemId));
+  }
+
+  @Post('season/next')
+  async nextSeason(@Req() request: AuthedRequest) {
+    return ok(await this.island.nextSeason(request.user.id));
   }
 
   @Get('weather')
