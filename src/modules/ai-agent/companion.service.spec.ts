@@ -94,6 +94,35 @@ describe('CompanionService', () => {
     });
   });
 
+  it('pushes the reasoning stream before the reply and keeps it out of the history', async () => {
+    const db = prismaStub();
+    const model: ModelClient = {
+      complete: jest.fn().mockResolvedValue('{"strategy":"empathy"}'),
+      stream: jest.fn((_model, _messages, onDelta, onReasoning) => {
+        onReasoning?.('先接住');
+        onReasoning?.('情绪。');
+        onDelta('我在。');
+        return Promise.resolve('我在。');
+      }),
+    };
+    const service = new CompanionService(db.client as never, model);
+    const events: unknown[] = [];
+    await service.respond({ userId: 'user-1', message: '我好累' }, (event) =>
+      events.push(event),
+    );
+
+    expect(events).toEqual([
+      { type: 'thinking', text: '先接住' },
+      { type: 'thinking', text: '情绪。' },
+      { type: 'delta', text: '我在。' },
+      { type: 'finish' },
+    ]);
+    expect(db.messages).toEqual([
+      { userId: 'user-1', role: 'user', content: '我好累' },
+      { userId: 'user-1', role: 'assistant', content: '我在。' },
+    ]);
+  });
+
   it('rejects an unknown strategy before the second hop', async () => {
     const db = prismaStub();
     const stream = jest.fn();

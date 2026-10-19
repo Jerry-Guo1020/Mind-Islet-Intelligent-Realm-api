@@ -12,12 +12,14 @@ export class OpenAiModelClient implements ModelClient {
     model: string,
     messages: ChatTurn[],
     onDelta: (text: string) => void,
+    onReasoning?: (text: string) => void,
   ): Promise<string> {
     const response = await this.request(model, messages, true);
     if (!response.body) {
-      const text = readContent(await response.json());
-      if (text) onDelta(text);
-      return text;
+      const message = readMessage(await response.json());
+      if (message.reasoning && onReasoning) onReasoning(message.reasoning);
+      if (message.content) onDelta(message.content);
+      return message.content;
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -32,8 +34,10 @@ export class OpenAiModelClient implements ModelClient {
       for (const line of lines) {
         const delta = parseSseLine(line);
         if (!delta) continue;
-        full += delta;
-        onDelta(delta);
+        if (delta.reasoning && onReasoning) onReasoning(delta.reasoning);
+        if (!delta.content) continue;
+        full += delta.content;
+        onDelta(delta.content);
       }
     }
     return full;
@@ -65,24 +69,52 @@ export class OpenAiModelClient implements ModelClient {
   }
 }
 
-function readContent(data: unknown): string {
-  if (!data || typeof data !== 'object') return '';
-  const choice = (data as { choices?: { message?: { content?: string } }[] })
-    .choices?.[0];
-  return choice?.message?.content ?? '';
+interface ModelMessage {
+  content: string;
+  reasoning: string;
 }
 
-function parseSseLine(line: string): string {
+function readMessage(data: unknown): ModelMessage {
+  if (!data || typeof data !== 'object') return { content: '', reasoning: '' };
+  const message = (
+    data as {
+      choices?: {
+        message?: { content?: string; reasoning_content?: string };
+      }[];
+    }
+  ).choices?.[0]?.message;
+  return {
+    content: message?.content ?? '',
+    reasoning: message?.reasoning_content ?? '',
+  };
+}
+
+function readContent(data: unknown): string {
+  return readMessage(data).content;
+}
+
+/**
+ * 一行 SSE 里可能同时有正文和思考，所以返回两段而不是一个字符串。
+ * 思考字段是推理模型才有的 reasoning_content（和 OpenAI 的 delta 同层）。
+ */
+function parseSseLine(line: string): ModelMessage | null {
   const trimmed = line.trim();
-  if (!trimmed.startsWith('data:')) return '';
+  if (!trimmed.startsWith('data:')) return null;
   const payload = trimmed.slice(5).trim();
-  if (!payload || payload === '[DONE]') return '';
+  if (!payload || payload === '[DONE]') return null;
   try {
     const parsed = JSON.parse(payload) as {
-      choices?: { delta?: { content?: string } }[];
+      choices?: {
+        delta?: { content?: string; reasoning_content?: string };
+      }[];
     };
-    return parsed.choices?.[0]?.delta?.content ?? '';
+    const delta = parsed.choices?.[0]?.delta;
+    if (!delta) return null;
+    const content = delta.content ?? '';
+    const reasoning = delta.reasoning_content ?? '';
+    if (!content && !reasoning) return null;
+    return { content, reasoning };
   } catch {
-    return '';
+    return null;
   }
 }

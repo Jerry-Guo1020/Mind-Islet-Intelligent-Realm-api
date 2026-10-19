@@ -28,7 +28,10 @@ export class CompanionService {
 
   async respond(
     input: CompanionTurnInput,
-    emit: (event: { type: 'delta' | 'finish'; text?: string }) => void,
+    emit: (event: {
+      type: 'delta' | 'thinking' | 'finish';
+      text?: string;
+    }) => void,
   ) {
     const message = input.message.trim();
     if (!message) {
@@ -62,6 +65,12 @@ export class CompanionService {
         this.env.large,
         replyMessages({ strategy: triage.strategy, history, message, today }),
         (text) => emit({ type: 'delta', text }),
+        /*
+         * 思考过程往前端推一份，让用户在小芽开口前就看见它在想什么。
+         * 只推不存：chat_messages 里还是只有用户那条和最终回复，
+         * 免得把模型的内心独白当聊天记录留下来。
+         */
+        (text) => emit({ type: 'thinking', text }),
       );
     } catch {
       reply = '';
