@@ -152,3 +152,105 @@
 下一步
 - 部署前在服务器执行 npx prisma migrate deploy，应用 20261012120000_add_user_settings。
 - 是否推送这四个提交由用户决定。
+
+============================================================
+[2026-10-21] 信箱图谱补数：count / weight / totals + 全量来信接口
+============================================================
+做了什么
+- 按 docs/superpowers/plans/2026-10-21-mailbox-graph-api.md（在前端仓 healthy-island_副本/docs/superpowers/plans/）实现，同步设计出处是该前端仓的 specs/2026-10-21-mailbox-atlas-redesign-design.md §2.4。
+- GET /api/mailbox/graph 现在返回 nodes[].count（这个关键词下有几封信）、edges[].weight（两个关键词共现几封信）、totals{letters, keywords}。
+  实现上从「一次 findMany + 一个 seen 集合」改成「findMany + count 并发（Promise.all）+ 两个 Map」，计数在 Map 上顺手累加；
+  nodes 的插入顺序仍按 createdAt asc 首次出现，前端不用排序。
+- totals.letters 必须单独 count() 一次，理由两条：一封信可以带好几个关键词，所以 Σnode.count 会大于信数；
+  而 records.length 只是「抽出了关键词的信」。标题组要写「N 封信」、且要和「全部来信」列表长度一致，所以按 where 数全部记录（这里刻意不叫 Σcount）。
+- 顺手修掉一个潜伏 bug：同一封信里若有关键词 id 重复（关联表理论上不会，但 sort() 之后重复 id 相邻），两两配对会造出一条 n1→n1 的自环（图上是一条长度 0 的线）。改成先 Map 去重再排序，并有专门用例钉住。
+- 新增 GET /api/mailbox/letters?year=&month=&mood=，一次取回全部来信（不按关键词筛，但年/月/情绪照筛）。
+  路由声明在 @Get('letters/:recordId') **之前**：静态路径写在带参数的前面是 Nest/Express 里更稳的写法，否则 'letters' 会被当成 recordId。
+  用反射读装饰器确认了注册顺序：graph → letters → nodes/:id/letters → letters/:recordId。
+- letters() 与 allLetters() 抽成共用的私有 list(userId, query, extra)，两者唯一的分歧就是 extra（一个带 nodes:{some:{id}}，一个空），
+  这样字段与排序永远不可能漂；有一条用例直接比对两条路由返回的键集合与整对象相等。
+- 前端动机（写在 allLetters() 的注释里）：前端原来自己拉图、再按每个关键词并发打 N 次 nodes/:id/letters、再在本地合并去重（utils/mailbox-flow.js 的 mergeMailboxLetters），
+  20 个关键词就是 20 次往返，还依赖「每封信都至少有一个关键词」这个不成立的假设。
+- 改动文件三个：src/modules/mailbox/mailbox.service.ts、mailbox.controller.ts、mailbox.service.spec.ts。
+
+没做什么
+- 没连数据库、没跑迁移、没执行任何 prisma 命令（本机 MySQL 故意不连）。
+- 没新增 npm 依赖，没碰小程序，没碰表结构，没改 where() 的过滤语义，没动 letter()（单封信）的返回形状。
+- 没提交、没推送（按用户要求；推送会触发阿里云自动部署）。
+- 没修 island.controller.ts / island.service.ts / records.service.ts 里既有的 36 个 eslint 报错（不是本次改动引入的，见下）。
+
+验证
+- npx tsc --noEmit：通过（无输出）。
+- npx eslint src/modules/mailbox/：0 问题。全仓 npx eslint "src/**/*.ts" 仍有 36 个报错，全部集中在三个**本次未改动**的文件里：
+  island.controller.ts、island.service.ts、records.service.ts（prettier 格式 + records/island 的 any 相关规则），
+  属于这期间新增的季节/房子那批提交带进来的既有问题（git status 确认这三个文件未被本次改动触碰）。
+- npx jest：19 套件 / 142 用例全绿。改前实测基线是 19 套件 / 137 用例（本计划书里写的「18 套件 / 132」已过时），本次 +5 条用例（graph 5→7、letters 3→6）。
+- 用例覆盖：count 与 weight 累加、两条查询共用同一个 where、重复关键词不造自环、单数字月、month=13 与 year=26 不碰库、
+  全年过滤、全量列表不按关键词筛但按年筛、按节点的列表仍带关键词过滤、两条列表路由字段一致。
+
+下一步
+- 前端：api/mailbox.js 加 fetchAllLetters(params)；「全部来信」不再本地合并；graph 消费 count/weight/totals（映射函数 utils/graph-layout.js 已就绪，缺字段时全图等大等宽）。
+- 前端标题组要显示「N 封信」，用 totals.letters，不要用 Σcount。
+- 部署时记得在服务器 npx prisma migrate deploy（本次没有新迁移，仅提醒流程）。
+- 是否推送由用户决定。
+
+===== 2026-10-19 小芽AI 聊天页：模型思考过程 + 流式跟滚（前端 + 后端） =====
+
+本次改动
+- 后端（已提交 0dbb89b，已推 main，CI 已部署，容器镜像 sha 0dbb89b907b3）：
+  model.client.ts 的 stream() 加可选第 4 参 onReasoning；openai-model.client.ts 同时解析 delta.reasoning_content
+  与 delta.content，返回 { content, reasoning }；companion.service.ts 把思考用新事件 { type: 'thinking', text }
+  先推给前端，且不写进 chat_messages。
+- 前端（本机 healthy-island_副本，不是 git 仓库，无需提交）：
+  utils/ai-socket.js 转发 thinking 事件；pages/spirit/chat.vue 加「思考卡」（流式期间打字机展开、正文一到就收起成
+  「已思考 N 秒 ›」，可点开回看）+ 正文打字机 + 流式自动跟滚 + 「找用户往上翻时不抢位置」。
+- 跟滚实现换过一次：scroll-top 累加大数在这台模拟器上数据变了视图不动，改用 scroll-into-view 交替指到内容底部
+  的两个锚点（id chat-anchor-a/b），实测能滚到底。
+
+验证（都是实测，不是推断）
+- 端到端 wss 探针（wss://api.20261020.xyz/api/ai）：{thinking:72, delta:17, finish:1}，首思考 +7.37s、首正文 +9.07s。
+- 开发者工具模拟器（iPhone 12，390x844）实测一条完整消息：三点 → 「小芽在想…」+ 思考打字机（37→168 字）→
+  正文到了立刻收成「已思考 2 秒」→ 正文打字机 → 落定；跟滚 2380→2550→2771，最后一条气泡底边贴着输入区上方。
+- 状态机用 scroll 事件喂值验证：翻上去 → 出现「↓ 回到最新」且流式不再把视图拉走；点它 → 恢复跟随；
+  自己滚回底部 → 自动恢复跟随。位置判断用的是上次「到底位置」maxScrollTop 再减 64px 容差，避免内容变长被误判。
+- 进页面自动落底也修了（首帧 scroll 指令会被丢，350ms 后补一次）。
+- 测试数据的 34 行 chat_messages 已清空（生产库现在 0 行），全部是本次测试写进去的。
+
+注意 / 下一步
+- 思考过程不落库：历史消息里没有「已思考」入口，只有本次会话内能展开回看。
+- 首字延迟约 7-9s（网关那边先吐 reasoning 再吐正文），要不要换不推理的快模型或加 reasoning_effort 由用户定。
+- greeting.service.ts 里 6s 超时比实测的 4.8-6.5s 紧，可能偶发回落固定语。
+
+补记（同一次会话，前端又加了两处）
+- 状态胶囊连上后端 3 秒后淡出（class 加 is-faded + opacity 过渡 + pointer-events: none），
+  断开/重连/出错会自动重新亮出来；胶囊那一行高度保留，淡出时下面的消息区不跳。
+- 键盘改成只抬输入区：input 加 :adjust-position="false"，onShow 注册 uni.onKeyboardHeightChange、
+  onHide 注销并把高度归零，composer-area 用 translateY(-高度) 抬起（0.2s 过渡）、抬起时去掉底部安全区留白，
+  抬完补一次滚到最新。这条模拟器验不了，等真机。
+- 备注：跟滚最终用的是 scroll-into-view 交替指向两个锚点（chat-anchor-a/b），已验证能滚到底；
+  进页面首帧的滚动指令会被丢，350ms 后补一次。
+
+2026-10-22 信箱模块：图谱补 count/weight/totals + 「全部来信」接口（本地提交，未推送）
+- 背景：前端反馈「全部来信」打不开、列表内容对不上。查线上 /api/mailbox/letters → 404：
+  这条路由只在本机工作区里，从没提交过，所以阿里云那份一直没有。
+- 后端这一轮（全部在 src/modules/mailbox/）：
+  - mailbox.service.ts：graph() 给每个关键词加 count（出现在几封信里）、每条边加 weight
+    （共同出现几次），并新增 totals.letters（这段时间的信件总数，**含一句关键词都没抽出来的信**，
+    所以单独 count 一次，不能拿 Σcount 或 records.length 顶）。同一封信里重复的关键词先去重
+    再排序，否则会造出 source === target 的自环。Where 只算一次，图和计数共用。
+  - mailbox.service.ts：新增 allLetters(userId, query) = list(userId, query, {})，
+    走的就是列表那条私有出口，字段和排序与 nodes/:id/letters 完全一致。
+  - mailbox.controller.ts：新增 @Get('letters')。**必须声明在 @Get('letters/:recordId') 前面**，
+    否则 'letters' 会被当成 recordId（注释已写在路由上方）。
+- 测试：mailbox.service.spec.ts 补 6 条（count/weight、where 一致、重复关键词不成自环、
+  全部来信不带关键词筛、按节点那边仍带筛、两条列表路由字段一致）。npx jest：20 suites / 145 tests 全绿（0.65s）。
+- 提交：本次只在本机 git 提交，**没有 push**（push main 会触发 Actions → 阿里云自动部署，
+  是否上线由用户决定）。所以线上 /api/mailbox/letters 现在仍然是 404，前端对这条失败给了明确文案。
+- 前端配套（本机 healthy-island_副本，不是 git 仓库）：atlas.vue 的「全部来信」接线、新用户空态、
+  弹层 58% → 75%、列表行错位（面板缺 box-sizing + 箭头绝对定位压住摘要）都已在那边改完并加了测试。
+- 补充（同一轮的后半段）：前端弹层高度改成了 `Math.round(GRAPH_SHEET_MAX * 100)vh`，
+  不是乘 utils/system.js 里缓存的 windowHeight —— 那份 metrics 带着「第一次调用发生在哪个 tab 页」
+  的 windowHeight（tab 页扣掉 tabBar，比图谱页矮 50px 左右），乘出来的 75% 到不了 75%。
+  预览脚本对 5 台机型核过：每台都是页高的 75%，并从存下来的图里量了面板上沿（差 0px）。
+  最终：前端 `node --test 'tests/*.test.mjs'` 128 条全绿、`tools/mutate-atlas-page.sh` 63/63 抓到、
+  `tools/check-imports.mjs` 无缺链；后端 npx jest 20 suites / 145 tests 全绿。

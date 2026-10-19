@@ -18,6 +18,15 @@ export class MailboxController {
     return ok(await this.mailbox.graph(request.user.id, query));
   }
 
+  // 静态路径写在带参数的前面：@Get('letters/:recordId') 会把 'letters' 当成 recordId
+  @Get('letters')
+  async allLetters(
+    @Req() request: AuthedRequest,
+    @Query() query: MailboxQuery,
+  ) {
+    return ok(await this.mailbox.allLetters(request.user.id, query));
+  }
+
   @Get('nodes/:id/letters')
   async letters(
     @Req() request: AuthedRequest,
