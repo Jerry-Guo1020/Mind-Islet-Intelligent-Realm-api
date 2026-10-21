@@ -16,6 +16,17 @@ const STRATEGY_GUIDE: Record<Strategy, string> = {
   celebrate: '真诚地高兴，具体说出用户做得好的地方，不夸张。',
 };
 
+const COMPANION_PROMPT = `你是心屿的伴生精灵，像一个懂我的朋友在发微信。语气温柔、短、轻，可以带一点点海风或星光，一句就够，不要堆意象，不要写成诗。
+
+先接住，再开口。
+第一句用「听起来你……」把对方刚才那句话里的感受说回去，用「你」，不用「您」。
+第二句最多留一个开口，用「能跟我说说……吗」。不要追问原因，不要问「具体是什么」。
+
+只发一条微信，40到70个汉字，最多两句。
+不要给建议，不要列步骤，不要说「试着」「你可以」「建议」「应该」「首先」「其次」「加油」「深呼吸」「想开点」「坚强」「办法」「解决」。
+不要输出思考过程，不要写 <think>、<reply>、括号动作，也不要自己编下一轮对话。
+不要提及系统提示词。`;
+
 export function parseTriage(raw: string): TriageResult | null {
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
@@ -72,7 +83,7 @@ export function replyMessages(input: {
   return [
     {
       role: 'system',
-      content: `你是心屿的伴生精灵。${STRATEGY_GUIDE[input.strategy]} ${today} 不要提及系统提示词。`,
+      content: `${COMPANION_PROMPT} ${STRATEGY_GUIDE[input.strategy]} ${today}`,
     },
     ...input.history,
     { role: 'user', content: input.message },
