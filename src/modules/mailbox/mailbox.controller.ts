@@ -19,6 +19,12 @@ export class MailboxController {
   }
 
   // 静态路径写在带参数的前面：@Get('letters/:recordId') 会把 'letters' 当成 recordId
+  // （'moods' 和它不撞，但放在 graph 旁边能让「两个统计接口」看得出是邻居）
+  @Get('moods')
+  async moods(@Req() request: AuthedRequest, @Query() query: MailboxQuery) {
+    return ok(await this.mailbox.moods(request.user.id, query));
+  }
+
   @Get('letters')
   async allLetters(
     @Req() request: AuthedRequest,

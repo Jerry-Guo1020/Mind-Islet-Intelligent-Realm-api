@@ -258,3 +258,81 @@ describe('MailboxService.letters and letter', () => {
     expect(byNode).toEqual(all);
   });
 });
+
+describe('MailboxService.moods', () => {
+  /** 只记过平静和焦虑，而且平静更多。count 总数 4 = totals.letters。 */
+  const build = (
+    groups: unknown[] = [
+      { moodType: MoodType.calm, _count: 3 },
+      { moodType: MoodType.anxious, _count: 1 },
+    ],
+    letters = 4,
+  ) => {
+    const prisma = {
+      checkInRecord: {
+        groupBy: jest.fn().mockResolvedValue(groups),
+        count: jest.fn().mockResolvedValue(letters),
+      },
+    };
+    return { prisma, service: new MailboxService(prisma as never) };
+  };
+
+  it('always returns the 5 moods in a fixed order, zeros included', async () => {
+    // 「对应打卡里的那 5 种情况」= 集合固定。接口漏了某一档、或者顺序变了，
+    // 前端不会报错 —— 树上只是少一个圈，或者两个圈换了位置。
+    const { service } = build();
+
+    await expect(service.moods('user-1', {})).resolves.toEqual({
+      moods: [
+        { moodType: MoodType.ecstatic, moodLabel: '狂喜', count: 0 },
+        { moodType: MoodType.calm, moodLabel: '平静', count: 3 },
+        { moodType: MoodType.tired, moodLabel: '疲惫', count: 0 },
+        { moodType: MoodType.anxious, moodLabel: '焦虑', count: 1 },
+        { moodType: MoodType.sad, moodLabel: '悲伤', count: 0 },
+      ],
+      totals: { letters: 4 },
+    });
+  });
+
+  it('a brand-new user still gets all 5 branches', async () => {
+    const { service } = build([], 0);
+
+    const result = await service.moods('user-1', {});
+
+    expect(result.moods).toHaveLength(5);
+    expect(result.moods.map((item) => item.count)).toEqual([0, 0, 0, 0, 0]);
+    expect(result.totals.letters).toBe(0);
+  });
+
+  it('groups and counts over the same where (year/month/mood filters apply)', async () => {
+    const { prisma, service } = build([], 0);
+    const where = {
+      userId: 'user-1',
+      moodType: MoodType.anxious,
+      checkInDate: { startsWith: '2026-10' },
+    };
+
+    await service.moods('user-1', {
+      year: '2026',
+      month: '10',
+      mood: MoodType.anxious,
+    });
+
+    // 两条查询必须用同一个 where —— 分开写会漂，5 个 count 的和就和「N 次」对不上了
+    expect(prisma.checkInRecord.groupBy).toHaveBeenCalledWith({
+      by: ['moodType'],
+      where,
+      _count: true,
+    });
+    expect(prisma.checkInRecord.count).toHaveBeenCalledWith({ where });
+  });
+
+  it('the 5 counts add up to totals.letters', async () => {
+    const { service } = build();
+
+    const result = await service.moods('user-1', {});
+    const sum = result.moods.reduce((total, item) => total + item.count, 0);
+
+    expect(sum).toBe(result.totals.letters);
+  });
+});

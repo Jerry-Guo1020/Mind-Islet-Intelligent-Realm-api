@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { moodLabel } from '../../common/mood';
+import { moodLabel, MOOD_ORDER } from '../../common/mood';
 import { parseMonth, parseYear } from '../../common/validation';
 import { parseMood } from '../records/records.service';
 
@@ -66,6 +66,42 @@ export class MailboxService {
       nodes: [...nodes.values()],
       edges: [...edges.values()],
       totals: { letters, keywords: nodes.size },
+    };
+  }
+
+  /**
+   * 成长树那 5 个情绪枝头：这段时间每种情绪各记了几次。
+   *
+   * **恒定 5 条、恒定顺序（MOOD_ORDER）**，一次都没记过的情绪也在里面、count 为 0。
+   * 「对应打卡里的那 5 种情况」意思是集合固定：前端拿到就直接摆，不用自己补缺失的
+   * 那几档 —— 补漏这种话两边各写一次，迟早只补一处，然后树上就少一个圈。
+   *
+   * totals.letters 就是 5 个 count 的和，单独给是为了和 /letters 的「N 封信」对齐：
+   * 那个数不分情绪，前端写统计行时用的是它，自己相加只是傅底。
+   *
+   * 注意 where 里也会带上 query.mood（如果有）—— 那就只会剩一个非 0 档。
+   * 这是故意的：筛选参数对每个接口应该是同一套语义，不在这里开特例。
+   */
+  async moods(userId: string, query: MailboxQuery) {
+    const where = this.where(userId, query);
+    const [groups, letters] = await Promise.all([
+      this.prisma.checkInRecord.groupBy({
+        by: ['moodType'],
+        where,
+        _count: true,
+      }),
+      this.prisma.checkInRecord.count({ where }),
+    ]);
+    const counts = new Map(
+      groups.map((group) => [group.moodType, group._count]),
+    );
+    return {
+      moods: MOOD_ORDER.map((mood) => ({
+        moodType: mood,
+        moodLabel: moodLabel(mood),
+        count: counts.get(mood) ?? 0,
+      })),
+      totals: { letters },
     };
   }
 
