@@ -3,6 +3,8 @@ import { MoodType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { shanghaiDate } from '../../common/crypto.util';
 import { MODEL_CLIENT, type ModelClient } from '../model/model.client';
+import { historyCutoff } from './chat-history.service';
+import { checkInKeywords, type TodayCheckIn } from './checkin-context';
 import type { ChatTurn } from '../model/model.client';
 import { parseTriage, replyMessages, triageMessages } from './prompts';
 
@@ -85,7 +87,7 @@ export class CompanionService {
 
   private async recentHistory(userId: string): Promise<ChatTurn[]> {
     const rows = await this.prisma.chatMessage.findMany({
-      where: { userId },
+      where: { userId, createdAt: { gte: historyCutoff() } },
       orderBy: { createdAt: 'desc' },
       take: 10,
     });
@@ -94,9 +96,16 @@ export class CompanionService {
       .map((row) => ({ role: row.role, content: row.content }));
   }
 
-  private async todayContext(userId: string) {
+  /**
+   * 今天打卡了什么。带着日记里抽出的关键词一起读 —— 用户要的是精灵知道
+   * 「记录和特征」，只给情绪等于只说了一半。
+   */
+  private async todayContext(
+    userId: string,
+  ): Promise<TodayCheckIn | undefined> {
     const record = await this.prisma.checkInRecord.findUnique({
       where: { userId_checkInDate: { userId, checkInDate: shanghaiDate() } },
+      include: { nodes: { select: { keyword: true } } },
     });
     if (!record) return undefined;
     const weather =
@@ -106,6 +115,7 @@ export class CompanionService {
     return {
       moodType: record.moodType,
       content: record.content,
+      keywords: checkInKeywords(record),
       aiReply: record.aiReply,
       weather,
     };

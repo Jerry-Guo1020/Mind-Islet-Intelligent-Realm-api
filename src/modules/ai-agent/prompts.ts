@@ -1,4 +1,9 @@
 import { ChatTurn } from '../model/model.client';
+import {
+  NO_CHECKIN_LINE,
+  todayCheckInLine,
+  type TodayCheckIn,
+} from './checkin-context';
 
 export const STRATEGIES = ['empathy', 'cbt', 'sfbt', 'celebrate'] as const;
 export type Strategy = (typeof STRATEGIES)[number];
@@ -70,16 +75,11 @@ export function replyMessages(input: {
   strategy: Strategy;
   history: ChatTurn[];
   message: string;
-  today?: {
-    moodType: string;
-    content: string;
-    aiReply: string | null;
-    weather: string;
-  };
+  today?: TodayCheckIn;
 }): ChatTurn[] {
-  const today = input.today
-    ? `今天用户打卡情绪是${input.today.moodType}，岛屿天气是${input.today.weather}。日记：${input.today.content}。鼓励语：${input.today.aiReply ?? '无'}。`
-    : '今天还没有打卡，按平静、晴天陪伴。';
+  // 今天打卡了什么（情绪 + 日记 + 关键词）和「没打卡」都只有这一处说法，
+  // 和主动问候共用 checkin-context。
+  const today = input.today ? todayCheckInLine(input.today) : NO_CHECKIN_LINE;
   return [
     {
       role: 'system',

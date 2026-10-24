@@ -26,8 +26,9 @@ export class AiController {
   @Get('messages')
   async messages(
     @Req() request: AuthedRequest,
-    @Query() query: { limit?: unknown; before?: unknown },
+    @Query() query: { limit?: unknown; before?: unknown; since?: unknown },
   ) {
+    await this.history.purgeExpired();
     return ok(await this.history.messages(request.user.id, query));
   }
 }

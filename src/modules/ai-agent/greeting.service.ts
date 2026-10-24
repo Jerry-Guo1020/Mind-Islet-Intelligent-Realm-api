@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { shanghaiDate } from '../../common/crypto.util';
 import { moodLabel } from '../../common/mood';
 import { withTimeout } from '../../common/with-timeout';
+import { checkInKeywords, todayCheckInLine } from './checkin-context';
 import {
   MODEL_CLIENT,
   type ChatTurn,
@@ -43,6 +44,7 @@ export function greetingMessages(input: {
   moodType: MoodType;
   checkedIn: boolean;
   content?: string;
+  keywords?: string[];
 }): ChatTurn[] {
   return [
     {
@@ -53,7 +55,13 @@ export function greetingMessages(input: {
     {
       role: 'user',
       content: input.checkedIn
-        ? `我今天已经打卡，情绪是${moodLabel(input.moodType)}。日记：${input.content ?? ''}`
+        ? // 开场白也要说得出「今天写了什么」：情绪 + 日记 + 关键词，和聊天回复同一份措辞。
+          // 不给天气和打卡鼓励语 —— 天气由接口单独下发，鼓励语刚在打卡页说过。
+          todayCheckInLine({
+            moodType: input.moodType,
+            content: input.content ?? '',
+            keywords: input.keywords ?? [],
+          })
         : '我今天还没有打卡。',
     },
   ];
@@ -73,10 +81,36 @@ export class GreetingService {
   ) {}
 
   async greeting(userId: string, now = new Date()): Promise<Greeting> {
+    const day = shanghaiDate(now);
+    const cached = await this.prisma.aiGreeting.findUnique({
+      where: { userId },
+    });
+    // 当天已经生成过就直接用。打卡状态变了（没打卡 → 打了卡）才重写，
+    // 否则同一天反复进页面会一直打模型。
+    if (cached && cached.day === day) {
+      const checkedInNow = Boolean(
+        await this.prisma.checkInRecord.findUnique({
+          where: { userId_checkInDate: { userId, checkInDate: day } },
+          select: { id: true },
+        }),
+      );
+      if (cached.checkedIn === checkedInNow || cached.checkedIn) {
+        return {
+          text: cached.text,
+          moodType: cached.moodType,
+          moodLabel: moodLabel(cached.moodType),
+          weather: cached.weather === 'rain' ? 'rain' : 'sunny',
+          checkedIn: cached.checkedIn,
+        };
+      }
+    }
+
     const record = await this.prisma.checkInRecord.findUnique({
       where: {
         userId_checkInDate: { userId, checkInDate: shanghaiDate(now) },
       },
+      // 开场白要用到「今天抽出的关键词」，和记录一起读出来
+      include: { nodes: { select: { keyword: true } } },
     });
     const checkedIn = Boolean(record);
     // 没打卡时沿用最近一次情绪的天气，岛屿不会突然放晴。
@@ -89,23 +123,44 @@ export class GreetingService {
     const moodType = latest?.moodType ?? MoodType.calm;
     const weather = weatherFor(moodType);
 
-    return {
+    const greeting = {
       text: await this.writeGreeting({
         moodType,
         checkedIn,
         content: record?.content,
+        keywords: checkInKeywords(record),
       }),
       moodType,
       moodLabel: moodLabel(moodType),
       weather,
       checkedIn,
     };
+    await this.prisma.aiGreeting.upsert({
+      where: { userId },
+      create: {
+        userId,
+        day,
+        text: greeting.text,
+        moodType,
+        weather,
+        checkedIn,
+      },
+      update: {
+        day,
+        text: greeting.text,
+        moodType,
+        weather,
+        checkedIn,
+      },
+    });
+    return greeting;
   }
 
   private async writeGreeting(input: {
     moodType: MoodType;
     checkedIn: boolean;
     content?: string;
+    keywords?: string[];
   }): Promise<string> {
     const fallback = greetingLine(input);
     if (!process.env.AI_API_KEY?.trim()) return fallback;

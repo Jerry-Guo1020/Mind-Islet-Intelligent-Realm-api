@@ -27,6 +27,7 @@ model User {
   records  CheckInRecord[]
   assets   IslandAsset[]
   messages ChatMessage[]
+  aiGreeting AiGreeting?
   islandProgress IslandProgress?
   islandPlacements IslandPlacement[]
 
@@ -129,7 +130,23 @@ model GraphNode {
   @@map("graph_nodes")
 }
 
-/// 精灵每一轮对话。用户输入和拼接完成的助手回复各一行。
+/// 当天的精灵问候。同一天再打开沿用这一句，过了上海零点才重新生成。
+model AiGreeting {
+  userId    String   @id @map("user_id")
+  /// 上海自然日，YYYY-MM-DD。和 day 不一致就当过期。
+  day       String   @db.Char(10)
+  text      String   @db.Text
+  moodType  MoodType @map("mood_type")
+  weather   String   @db.VarChar(16)
+  checkedIn Boolean  @map("checked_in")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_greetings")
+}
+
+/// 精灵每一轮对话。用户输入和拼接完成的助手回复各一行。只保留最近一周。
 model ChatMessage {
   id        String   @id @default(cuid())
   userId    String   @map("user_id")

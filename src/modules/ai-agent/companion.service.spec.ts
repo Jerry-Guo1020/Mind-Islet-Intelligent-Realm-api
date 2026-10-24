@@ -1,5 +1,6 @@
 import { MoodType } from '@prisma/client';
 import { CompanionService, FALLBACK_REPLY } from './companion.service';
+import { NO_CHECKIN_LINE } from './checkin-context';
 import { ModelClient } from '../model/model.client';
 
 function prismaStub() {
@@ -57,6 +58,7 @@ describe('CompanionService', () => {
       moodType: MoodType.sad,
       content: '考试没考好',
       aiReply: '我陪你听听雨声',
+      nodes: [{ keyword: '考试' }, { keyword: '熬夜' }],
     });
     const model: ModelClient = {
       complete: jest
@@ -69,7 +71,13 @@ describe('CompanionService', () => {
         onDelta('。');
         expect(messages[0].content).toContain('先接住情绪');
         expect(messages[0].content).toContain('考试没考好');
-        expect(messages[0].content).toContain('rain');
+        // 情绪和天气都走中文：模型从前读到的是 sad / rain
+        expect(messages[0].content).toContain('「悲伤」');
+        expect(messages[0].content).toContain('雨');
+        expect(messages[0].content).not.toContain('sad');
+        expect(messages[0].content).not.toContain('rain');
+        // 日记里抽出的特征也要给到它
+        expect(messages[0].content).toContain('考试、熬夜');
         return Promise.resolve('我在。');
       }),
     };
@@ -92,6 +100,30 @@ describe('CompanionService', () => {
       role: 'assistant',
       content: '我在。',
     });
+    // 今日打卡连着挂在上面的关键词一起读，不然模型的「特征」是空的
+    expect(db.client.checkInRecord.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: { nodes: { select: { keyword: true } } },
+      }),
+    );
+  });
+
+  it('says the day is empty without a check-in, and never asks for keywords', async () => {
+    const db = prismaStub();
+    const model: ModelClient = {
+      complete: jest.fn().mockResolvedValue('{"strategy":"empathy"}'),
+      stream: jest.fn((_model, messages, onDelta) => {
+        expect(messages[0].content).toContain(NO_CHECKIN_LINE);
+        expect(messages[0].content).not.toContain('关键词');
+        onDelta('我在。');
+        return Promise.resolve('我在。');
+      }),
+    };
+    const service = new CompanionService(db.client as never, model);
+
+    await service.respond({ userId: 'user-1', message: '在吗' }, () => {});
+
+    expect(model.stream).toHaveBeenCalled();
   });
 
   it('pushes the reasoning stream before the reply and keeps it out of the history', async () => {
