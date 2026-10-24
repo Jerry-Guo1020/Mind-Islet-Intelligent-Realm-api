@@ -136,9 +136,11 @@ export function settleCheckIn(state: IslandState, mood: string, date: string) {
 }
 
 /**
- * 兑换。season 省略时按当前季节记账；传了就是往那个季节买（锁住的季节也能预购）。
- * 服务端**不检查目标季节是否解锁** —— 预购就是「未解锁也能买」这个功能的全部意义，
- * 能不能摆由前端的「季节解锁 && 已拥有」决定。
+ * 兑换。season 省略时按当前季节记账；传了就是往那个季节买。
+ *
+ * 目标季节必须**已解锁**（当前季节以及它之前的季节）。服务端不再接受「在春天买冬天的东西」——
+ * 2026-10-24 用户否掉了预购：未解锁的卡片上不该出现兑换按钮，那么接口也不该收这种请求。
+ * 前端只会在已解锁的季节给按钮，这一层是防住陈旧客户端和直接打接口的。
  */
 export function redeemItem(
   state: IslandState,
@@ -151,6 +153,14 @@ export function redeemItem(
   const target = season || state.season;
   if (!SEASONS.includes(target as (typeof SEASONS)[number]))
     fail('unknown_season');
+  // 季节字段是脏值时回落到春天（和前端 seasonTrack/unlockedSeasons 同一个写法），
+  // 不然 indexOf 得 -1、扫出来的已解锁列表是空的，什么季节都买不了。
+  const currentIndex = Math.max(
+    0,
+    SEASONS.indexOf(state.season as (typeof SEASONS)[number]),
+  );
+  const unlocked = SEASONS.slice(0, currentIndex + 1) as readonly string[];
+  if (!unlocked.includes(target)) fail('season_locked');
   // 任一季节拥有过就拒绝：前端「拥有一次四季通用」，同一个物品不能收两次钱。
   // （旧版只查目标季节，于是春天买了小木屋、夏天还能再买一次同样的。）
   if (ownsAnySeason(state, itemId)) fail('already_owned');

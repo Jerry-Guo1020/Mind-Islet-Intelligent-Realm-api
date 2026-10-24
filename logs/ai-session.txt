@@ -351,3 +351,41 @@
 下一步
 - 演示注意：账号若已解锁全部季节，看不到「未解锁」的样子；要演示锁住的状态需要一个停在春天的账号。
 - 前端要进正式仓库时，按 AI_OPTIMIZATION_LOG.md 的分支流程把副本里的改动带过去。
+
+[2026-10-24 补记] 部署
+- 只提交了本次情绪岛的 4 个 island 文件（+ 本日志），commit f74ed2a，push 到 main。
+  10-22 那批 ai-agent 改动和 ai_day_cache 迁移按用户要求仍然留在工作区，没有一起部署。
+- GitHub Actions run 40069574900 全绿（Build and push image、Upload deploy files、
+  Deploy on server 都 success），跑完 06:16:50 → 06:18:46。绑定镜像 tag 是 f74ed2a，
+  docker compose pull/up 用的是这个不可变 tag。本次没有新迁移，migrate deploy 是空跑。
+- 线上接口没有直接验证过（拿不到 API 域名，也没有登录态），只有 CI 成功这一条证据。
+- 这段补记没有提交 —— 提交再推送会再触发一次部署，没必要。
+
+============================================================
+[2026-10-24 晚] 服务端拦住未解锁季节的兑换；重启容器；前端几处排版
+============================================================
+做了什么
+- 后端（本仓库）：island-rules.ts 的 redeemItem 增加「目标季节必须已解锁」，否则
+  fail('season_locked')。季节字段是脏值时按春天算（Math.max(0, indexOf(…))），否则
+  indexOf 得 -1、已解锁列表为空，会变成「哪个季节都买不了」。
+  island-rules.spec.ts 新增两条（拒未解锁季节、脏季节回落），并把「同一个物品只收一次钱」
+  那条改成先把季节开到头（否则会先被 season_locked 拦住）。jest 160 条全绿，tsc 与 prettier 干净。
+  前端副本 utils/island-rules.js 的镜像同步了这条，reasonText 增加 season_locked → 「这个季节还没解锁」。
+  island-rules.test.mjs 相应新增两条；该仓 node --test 165 条、164 通过（唯一失败仍是
+  pages/login/index.vue 的 cover.jpg 没走 asset()，10-21 就红的）。
+- 服务器：docker compose restart api（只重启 api，没动 mysql）。重启后 GET / 返回
+  Hello World!、/api/island/state 无 token 返回 401、六个 island 路由都在。
+
+没做什么
+- 没有改换季条件，没有动 Prisma schema，没有新迁移。
+- 没有动 10-22 那批 ai-agent 改动（仍未提交，仍在工作区）。
+
+下一步 / 待办
+- 用户报「岛屿首页转圈/报错」。已排查：后端容器健康、六个接口 200、Cloudflare 隧道
+  （api.20261020.xyz → 127.0.0.1:3000）从外网 200、图片域名 200；云隧道累计请求数在我
+  自己 curl 之外没有增长，auth_sessions.last_used_at 停在 07:14 UTC —— 说明小程序的请求
+  根本没到服务器。怀疑微信开发者工具的「不校验合法域名」被关、或真机没配请求域名白名单，
+  待用户给开发者工具里的报错原文。重启后端与这个问题无关。
+- 前端还有一处同类风险未改：pages/spirit/chat.vue 的 .chat__body 与
+  pages/spirit/history.vue 的 .history__body 仍是 `flex: 1; min-height: 0`
+  （这套写法已在首页面板和树洞信件层被真机证明失效）。
