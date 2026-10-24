@@ -56,4 +56,41 @@ describe('island rules', () => {
       'unknown_item',
     );
   });
+
+  it('books a pre-purchase into the season that was asked for', () => {
+    // 在春天买「夏天 · 小木屋」：记到夏天头上，季节本身不动。
+    const state = { ...emptyIsland(), happyPoints: 100 };
+    const next = redeemItem(state, 'house', 'summer').state;
+    expect(next.season).toBe('spring');
+    expect(next.happyPoints).toBe(70);
+    expect(next.placements).toEqual([
+      { season: 'summer', itemId: 'house', source: 'redeem' },
+    ]);
+  });
+
+  it('falls back to the current season when no season is given', () => {
+    const state = { ...emptyIsland(), season: 'autumn', happyPoints: 50 };
+    const next = redeemItem(state, 'deluxe_house').state;
+    expect(next.placements).toEqual([
+      { season: 'autumn', itemId: 'deluxe_house', source: 'redeem' },
+    ]);
+    expect(next.happyPoints).toBe(10);
+  });
+
+  it('rejects a season that is not one of the four', () => {
+    expect(() =>
+      redeemItem({ ...emptyIsland(), happyPoints: 100 }, 'house', 'monsoon'),
+    ).toThrow('unknown_season');
+  });
+
+  it('charges for an item only once, whatever season it was bought in', () => {
+    // 前端说「拥有一次四季通用」，后端就不能换个季节再收一次钱。
+    const owned = {
+      ...emptyIsland(),
+      happyPoints: 100,
+      placements: [{ season: 'summer', itemId: 'house', source: 'redeem' }],
+    };
+    expect(() => redeemItem(owned, 'house', 'winter')).toThrow('already_owned');
+    expect(() => redeemItem(owned, 'house')).toThrow('already_owned');
+  });
 });

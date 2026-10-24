@@ -24,8 +24,13 @@ export class IslandController {
   }
 
   @Post('redeem')
-  async redeem(@Req() request: AuthedRequest, @Body() body: { itemId: string }) {
-    return ok(await this.island.redeem(request.user.id, body.itemId));
+  async redeem(
+    @Req() request: AuthedRequest,
+    @Body() body: { itemId: string; season?: string },
+  ) {
+    return ok(
+      await this.island.redeem(request.user.id, body.itemId, body.season),
+    );
   }
 
   @Post('season/next')

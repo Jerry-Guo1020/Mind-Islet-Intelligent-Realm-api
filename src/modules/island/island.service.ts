@@ -49,11 +49,11 @@ export class IslandService {
     };
   }
 
-  async redeem(userId: string, itemId: string) {
+  async redeem(userId: string, itemId: string, season?: string) {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.readState(userId, tx);
       try {
-        const next = redeemItem(current, itemId).state;
+        const next = redeemItem(current, itemId, season).state;
         await this.writeState(userId, current, next, tx);
         return next;
       } catch (error) {

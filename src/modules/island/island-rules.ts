@@ -86,12 +86,6 @@ function dayNumber(date: string) {
   return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
 }
 
-function hasItem(state: IslandState, season: string, itemId: string) {
-  return state.placements.some(
-    (item) => item.season === season && item.itemId === itemId,
-  );
-}
-
 /**
  * 拥有一次就四季通用：只要在任何一个季节拥有过，就算拥有。
  * 不这样做的话，树只在春天发过一次（redeemItem 也不让买），夏天往后永远凑不开换季条件。
@@ -141,11 +135,25 @@ export function settleCheckIn(state: IslandState, mood: string, date: string) {
   };
 }
 
-export function redeemItem(state: IslandState, itemId: string) {
+/**
+ * 兑换。season 省略时按当前季节记账；传了就是往那个季节买（锁住的季节也能预购）。
+ * 服务端**不检查目标季节是否解锁** —— 预购就是「未解锁也能买」这个功能的全部意义，
+ * 能不能摆由前端的「季节解锁 && 已拥有」决定。
+ */
+export function redeemItem(
+  state: IslandState,
+  itemId: string,
+  season?: string,
+) {
   if (!SEASON_ITEMS.includes(itemId as (typeof SEASON_ITEMS)[number]))
     fail('unknown_item');
   if (itemId === 'tree' || itemId === 'fence') fail('not_redeemable');
-  if (hasItem(state, state.season, itemId)) fail('already_owned');
+  const target = season || state.season;
+  if (!SEASONS.includes(target as (typeof SEASONS)[number]))
+    fail('unknown_season');
+  // 任一季节拥有过就拒绝：前端「拥有一次四季通用」，同一个物品不能收两次钱。
+  // （旧版只查目标季节，于是春天买了小木屋、夏天还能再买一次同样的。）
+  if (ownsAnySeason(state, itemId)) fail('already_owned');
   const points = offsetPoints(state.happyPoints, state.disappointPoints);
   const price = ITEM_PRICES[itemId];
   if (points.happyPoints < price) fail('insufficient_points');
@@ -156,7 +164,7 @@ export function redeemItem(state: IslandState, itemId: string) {
       disappointPoints: points.disappointPoints,
       placements: [
         ...state.placements,
-        { season: state.season, itemId, source: 'redeem' },
+        { season: target, itemId, source: 'redeem' },
       ],
     },
   };

@@ -254,3 +254,100 @@
   预览脚本对 5 台机型核过：每台都是页高的 75%，并从存下来的图里量了面板上沿（差 0px）。
   最终：前端 `node --test 'tests/*.test.mjs'` 128 条全绿、`tools/mutate-atlas-page.sh` 63/63 抓到、
   `tools/check-imports.mjs` 无缺链；后端 npx jest 20 suites / 145 tests 全绿。
+
+2026-10-22 提示词打包到桌面（只读导出，项目本身没动）
+- 需求：把本项目里的提示词单独打包一份放到桌面。用户选了「只复制原始 .ts 文件」，不要汇总文档。
+- 全项目扫了一遍，提示词一共三处（都在 system content 里）：
+  - src/modules/ai-agent/prompts.ts：STRATEGY_GUIDE（empathy/cbt/sfbt/celebrate 四段策略）+ triageMessages（只输出 JSON 的分诊）
+    + replyMessages（伴生精灵回复，拼今天打卡/天气/日记/鼓励语）。
+  - src/modules/ai-agent/greeting.service.ts：greetingMessages（开场问候，一两句三十字内）。
+  - src/modules/records/ai-encouragement.ts：encouragementMessages（打卡回应，一两句四十字内）。
+  另外模板兜底文案（greetingLine / TemplateEncouragement / FALLBACK_REPLY）不是模型提示词，没单独抽。
+- 导出位置：~/Desktop/healthy-island-prompts/，按原目录结构放 src/modules/{ai-agent,records,model}/。
+  多带了一个 src/modules/model/model.client.ts，因为 prompts.ts 依赖它的 ChatTurn 类型，不带的话复制出来读不通。
+- 校验：4 个副本与项目内原文件 diff 逐字节一致。桌面这份是一次性快照，项目里改了不会自动同步。
+
+补记（同一次会话）：核查「提示词是不是全了」+ 补齐兜底文案
+- 核查方式：grep "role: 'system'" 与 grep "\.complete(|\.stream(" 双向对照，
+  调用点 4 个、提示词构造 4 个，一一对应，无遗漏：
+  companion.service:45→triageMessages、companion.service:64→replyMessages、
+  greeting.service:116→greetingMessages、ai-encouragement:56→encouragementMessages。
+- 顺带排查过但确认无提示词：prompt-test/ 空目录；前端 healthy-island 与 healthy-island_副本
+  全仓库无 "你是心屿"/"role: 'system'"；docs 下 plan/spec 只提文件名不含正文。
+- 用户选择把兜底文案也纳入，于是再补两个文件到 ~/Desktop/healthy-island-prompts/：
+  src/modules/records/encouragement.ts（TemplateEncouragement 5 条心情模板文案）、
+  src/modules/ai-agent/companion.service.ts（FALLBACK_REPLY 一条兜底语）。
+- 桌面文件夹最终 6 个文件，全部 diff 逐字节一致：
+  ai-agent/{prompts.ts, greeting.service.ts, companion.service.ts}、
+  records/{ai-encouragement.ts, encouragement.ts}、model/model.client.ts。
+
+============================================================
+[2026-10-22] 推送本地已有的 2 个提交
+============================================================
+做了什么
+- 本地 main 比 origin/main 领先 2 个提交：debf85d（信箱图谱 count/weight/totals + GET /api/mailbox/letters）、f0386eb（精灵对话提示词改成更短的伴生口吻）。
+- 已推送到 https://github.com/Jerry-Guo1020/Mind-Islet-Intelligent-Realm-api.git 的 main：0dbb89b..f0386eb。
+- 用代理再 fetch 核对，本地 HEAD 与 origin/main 都是 f0386eb，没有未推送提交。
+
+没做什么
+- 未把 logs/ai-session.txt 未提交的桌面提示词导出记录纳入本次推送。
+- 未提交 .DS_Store。
+- 未改业务代码，未连 MySQL，未跑 migration。
+
+下一步
+- push main 会触发 Actions 自动部署。本次没有新 migration。
+- 会话日志的未提交改动仍留在工作区，是否单独提交由用户决定。
+
+============================================================
+[2026-10-22] 小芽当天缓存、一周历史、去掉聊天页返回箭头
+============================================================
+做了什么
+- 问候按上海自然日缓存：新增 ai_greetings（prisma/schema.prisma + migrations/20261022120000_ai_day_cache）。同一天再请求直接读库，过了零点或当天从没打卡变成已打卡才重新生成。GreetingService 已改，greeting.service.spec 补了复用和跨天两条。
+- 对话只留最近 7 个上海自然日（含今天）。ChatHistoryService.messages 增加 since，下限仍是一周窗口；查询历史时 purgeExpired 删掉更早的行。陪伴模型的上下文也只取这一周。chat-history.service.spec 已按新窗口改过。
+- 已 npx prisma generate。npx tsc --noEmit 无输出。jest 跑 chat-history / greeting / companion 三个 spec，22 条通过。
+- 前端改动在 ../healthy-island_副本，不在本仓库：当天本地快照（utils/ai-cache.js）、聊天页当天沿用、右上角「近一周」进 pages/spirit/history、tab 页去掉返回箭头。副本测试 ai-cache + nav-back 13 条通过。
+
+没做什么
+- 没有 git commit，没有 push。push main 会触发 Actions 部署，remote-deploy.sh 会 prisma migrate deploy，这次会在线上建 ai_greetings。等用户明确说推再推。
+- 没有连 MySQL，没有在本地或线上跑 migrate。
+- logs/ai-session.txt 之前那批未提交记录（桌面提示词导出、上次推送补记）这次也没有单独提交。
+- 前端副本不是 git 仓库。正式前端仓库 ../healthy-island 仍停在 origin/main e64f92d，这次的页面改动还没拷过去，也没提交。
+
+下一步
+- 用户确认后：后端提交并 push main，让 Actions 建表并部署。
+- 前端要进正式仓库的话，先按 AI_OPTIMIZATION_LOG.md 的分支流程，把副本里的改动带到 healthy-island，不要直接在副本里找 git。
+
+============================================================
+[2026-10-24] 情绪岛：按季节锁物品、购买弹窗、兑换与换季页
+============================================================
+做了什么
+- 前端（../healthy-island_副本，不是 git 仓库）：
+  - utils/island-dressing.js：「能摆」= 那个季节已解锁 且 已拥有（从前是任一季节拥有过、四季都能摆）。
+    blockReason 的 'season' 退役，新增 'owned_locked'；新增纯函数 cardAction（use/buy/blocked）
+    和 DRESSING_STORAGE（搭配选择的键，只定义一份）。
+  - 新增 components/island/ItemPurchaseDialog.vue（购买弹窗）、pages/island/shop.vue
+    （兑换与换季页，已注册进 pages.json）。弹窗只读卡片字段，抵扣走 offsetPoints。
+  - pages/island/index.vue：整张卡都可点（从前锁住的卡点下去没有任何反应）；面板底部换成
+    「兑换与换季」入口；撤掉「进入下一季」按钮和未解锁条件文字。
+  - components/island/IslandStatusBar.vue：首页撤掉春夏秋冬四个点（用户要求），只留开心值和失望值的胶囊。
+  - api/island.js：redeemIslandItem(itemId, season)。
+  - 测试：新增 tests/island-shop.test.mjs；重写 tests/island-dressing.test.mjs 的锁定断言；
+    tests/island-hud.test.mjs 换成「首页不许出现四季」；tests/nav-back.test.mjs 的归属推断
+    补上 pages/island/*，子页面计数 9→10。node --test 共 157 条、156 通过，唯一失败是既有的
+    pages/login/index.vue 的 cover.jpg 没走 asset()（10-21 改的登录页，与本次无关）。
+- 后端（本仓库）：
+  - src/modules/island/island-rules.ts：redeemItem(state, itemId, season?)，布置记录写进目标季节；
+    新增 unknown_season；改成「任一季节拥有过就拒绝」（从前只查目标季节，同一个物品可以收两次钱）。
+  - island.service.ts / island.controller.ts：season 从请求体透传到规则层。
+  - island-rules.spec.ts：新增 4 条（跨季预购、省略 season 时回落当前季、unknown_season、
+    跨季重复购买被拒）。jest 158 条全通过，tsc --noEmit 无输出。
+  - 服务端不检查目标季节是否解锁 —— 预购就是这个功能的全部意义。
+
+没做什么
+- 没有新增 Prisma 字段或迁移，本次部署不需要 migrate；10-22 的 ai_day_cache 迁移仍留在工作区未提交。
+- 没有改打卡结算，也没有改换季条件（仍是「必备物品齐全 + 连续打卡 30 天」）。
+- 前端副本不是 git 仓库，正式前端仓库 ../healthy-island 没有同步这次改动。
+
+下一步
+- 演示注意：账号若已解锁全部季节，看不到「未解锁」的样子；要演示锁住的状态需要一个停在春天的账号。
+- 前端要进正式仓库时，按 AI_OPTIMIZATION_LOG.md 的分支流程把副本里的改动带过去。
