@@ -113,7 +113,13 @@ export function settleCheckIn(state: IslandState, mood: string, date: string) {
     lastMood: mood,
   };
   let grantedTree = false;
-  if (state.totalCheckIns === 0) {
+  // 进度里的 totalCheckIns 可能被历史数据/手工回滚清零，但树上已经有那棵树了。
+  // 这时再 push 一棵会让唯一键 (userId, season, itemId) 撞车，整个打卡事务回滚 ——
+  // 用户看到的就是「今天已经打过卡了」，而这一天根本没写进去。
+  const alreadyOwnsTree = state.placements.some(
+    (item) => item.itemId === 'tree',
+  );
+  if (state.totalCheckIns === 0 && !alreadyOwnsTree) {
     next.placements.push({
       season: next.season,
       itemId: 'tree',

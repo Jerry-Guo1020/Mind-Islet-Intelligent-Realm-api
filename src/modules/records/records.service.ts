@@ -109,13 +109,18 @@ export class RecordsService {
           update: progressData(settled.state),
         });
         if (settled.grantedTree) {
-          await tx.islandPlacement.create({
-            data: {
-              userId,
-              season: settled.state.season as never,
-              itemId: 'tree',
-              source: 'first_checkin',
-            },
+          // createMany + skipDuplicates：树上已经有那棵树时不要抛 P2002。
+          // 打卡记录才是「今天写过没有」的唯一依据，摆设不该把这一天顶掉。
+          await tx.islandPlacement.createMany({
+            data: [
+              {
+                userId,
+                season: settled.state.season as never,
+                itemId: 'tree',
+                source: 'first_checkin',
+              },
+            ],
+            skipDuplicates: true,
           });
         }
         for (const keyword of keywords) {

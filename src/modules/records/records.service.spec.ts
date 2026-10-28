@@ -45,11 +45,14 @@ function prismaStub() {
     checkInDate: '2026-10-12',
     createdAt: new Date('2026-10-12T10:00:00+08:00'),
   };
-  const placement = { create: jest.fn().mockResolvedValue(null) };
+  const placement = {
+    createMany: jest.fn().mockResolvedValue({ count: 1 }),
+    findMany: jest.fn().mockResolvedValue([]),
+  };
   const tx: {
     checkInRecord: { create: jest.Mock };
     islandProgress: { findUnique: jest.Mock; upsert: jest.Mock };
-    islandPlacement: { create: jest.Mock };
+    islandPlacement: { createMany: jest.Mock; findMany: jest.Mock };
     graphNode: { upsert: jest.Mock; update: jest.Mock };
   } = {
     checkInRecord: { create: jest.fn().mockResolvedValue(record) },
@@ -210,6 +213,38 @@ describe('RecordsService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('still checks in when progress forgot the tree but the placement exists', async () => {
+    const prisma = prismaStub();
+    prisma.tx.islandProgress.findUnique.mockResolvedValue({
+      happyPoints: 0,
+      disappointPoints: 0,
+      totalCheckIns: 0,
+      consecutiveCheckInDays: 30,
+      lastCheckInDate: null,
+      lastMood: null,
+      season: 'spring',
+      specialReward: null,
+    });
+    prisma.tx.islandPlacement.findMany.mockResolvedValue([
+      { season: 'spring', itemId: 'tree', source: 'redeem' },
+      { season: 'spring', itemId: 'house', source: 'redeem' },
+    ]);
+    const service = new RecordsService(
+      prisma as unknown as PrismaService,
+      { write: jest.fn().mockResolvedValue('我陪你') },
+      progressStub() as unknown as ProgressService,
+    );
+
+    const result = await service.create('user-1', {
+      moodType: MoodType.calm,
+      content: '今天考试',
+    });
+
+    expect(result.record.id).toBe('record-1');
+    expect(result.settlement.grantedTree).toBe(false);
+    expect(prisma.placement.createMany).not.toHaveBeenCalled();
+  });
+
   it('returns the first tree and the island growth after a check-in', async () => {
     const prisma = prismaStub();
     const encouragement = { write: jest.fn().mockResolvedValue('我陪你') };
@@ -242,13 +277,16 @@ describe('RecordsService', () => {
       totalCheckIns: 3,
       streak: 2,
     });
-    expect(prisma.placement.create).toHaveBeenCalledWith({
-      data: {
-        userId: 'user-1',
-        season: 'spring',
-        itemId: 'tree',
-        source: 'first_checkin',
-      },
+    expect(prisma.placement.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          userId: 'user-1',
+          season: 'spring',
+          itemId: 'tree',
+          source: 'first_checkin',
+        },
+      ],
+      skipDuplicates: true,
     });
     expect(progress.snapshot).toHaveBeenCalledWith(
       'user-1',
